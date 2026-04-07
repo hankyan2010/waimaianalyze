@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>经营心电图</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #0ea5e9;
+      --shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.5;
+      padding: 22px;
+    }
+    .container { max-width: 1240px; margin: 0 auto; }
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    h1 { margin: 0; font-size: 28px; }
+    h3 { margin: 0 0 8px; }
+    .desc { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button, input, textarea {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      padding: 8px 12px;
+      background: #fff;
+    }
+    button { cursor: pointer; color: var(--text); }
+    button:disabled { cursor: not-allowed; opacity: 0.6; }
+    .primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 14px;
+    }
+    @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
+    #chart { width: 100%; height: 500px; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .summary-item {
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .summary-item p { margin: 0; color: var(--muted); font-size: 13px; }
+    .summary-item h3 { margin: 6px 0 0; font-size: 22px; }
+    .helper { color: var(--muted); margin-top: 8px; font-size: 12px; }
+    .status {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #0f766e;
+      background: #ecfeff;
+      border: 1px solid #a5f3fc;
+      border-radius: 8px;
+      padding: 8px;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .status.error {
+      color: #9a3412;
+      background: #fff7ed;
+      border-color: #fed7aa;
+    }
+    .mode-chip {
+      display: inline-block;
+      font-size: 12px;
+      color: #075985;
+      background: #e0f2fe;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-left: 6px;
+    }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="card topbar">
+      <div>
+        <h1>经营心电图 <span class="mode-chip" id="modeChip">当前：模拟数据</span></h1>
+        <p class="desc">15分钟粒度订单量 + 平均客单价（实付）双轴曲线（近15天）</p>
+      </div>
+      <div class="actions">
+        <button id="prevBtn">上一天</button>
+        <input id="datePicker" type="date" />
+        <button id="nextBtn">下一天</button>
+        <button id="downloadBtn" class="primary">下载图片</button>
+      </div>
+    </section>
+
+    <div class="layout">
+      <div>
+        <section class="card">
+          <div id="chart"></div>
+        </section>
+        <section class="card">
+          <div id="summary" class="summary-grid"></div>
+        </section>
+      </div>
+
+      <aside class="card">
+        <h3>上传模式（美团标准报表 CSV）</h3>
+        <div class="field">
+          <label for="csvFile">CSV 文件</label>
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+        </div>
+        <div class="actions">
+          <button id="loadCsvBtn" class="primary">上传并解析 CSV</button>
+          <button id="resetBtn">恢复模拟模式</button>
+        </div>
+        <div id="status" class="status"></div>
+
+        <p class="helper">CSV 需包含以下列（支持同义字段）：日期、下单时间、订单状态、订单实付、订单编号。</p>
+        <p class="helper">只统计“已完成”订单；按下单时间 floor 到 15 分钟；无订单桶补齐为 0 / null / 0。</p>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const BUCKET_COUNT = 96;
+    const DAY_WINDOW = 15;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    const datePicker = document.getElementById('datePicker');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const summaryEl = document.getElementById('summary');
+    const csvFileInput = document.getElementById('csvFile');
+    const loadCsvBtn = document.getElementById('loadCsvBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusEl = document.getElementById('status');
+    const modeChip = document.getElementById('modeChip');
+
+    const chart = echarts.init(document.getElementById('chart'));
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minDate = new Date(today.getTime() - (DAY_WINDOW - 1) * DAY_MS);
+
+    const toDateStr = (date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    const bucketLabels = Array.from({ length: BUCKET_COUNT }, (_, idx) => {
+      const minutes = idx * 15;
+      const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+      const m = String(minutes % 60).padStart(2, '0');
+      return `${h}:${m}`;
+    });
+
+    function showStatus(msg, isError = false) {
+      statusEl.style.display = 'block';
+      statusEl.classList.toggle('error', isError);
+      statusEl.textContent = msg;
+    }
+
+    function setModeLabel(isUploadMode) {
+      modeChip.textContent = isUploadMode ? '当前：CSV上传数据' : '当前：模拟数据';
+    }
+
+    function seededRandom(seed) {
+      let state = seed;
+      return () => {
+        state = (state * 1664525 + 1013904223) % 4294967296;
+        return state / 4294967296;
+      };
+    }
+
+    function generateRawOrdersForDate(dateStr) {
+      const rand = seededRandom(Number(dateStr.replace(/-/g, '')));
+      const orders = [];
+      let serial = 1;
+
+      for (const bucket of bucketLabels) {
+        const hour = Number(bucket.slice(0, 2));
+        const isLunch = hour >= 11 && hour <= 13;
+        const isDinner = hour >= 17 && hour <= 20;
+        const isLate = hour >= 22 || hour <= 6;
+
+        let orderCount = 0;
+        if (isLunch) orderCount = 3 + Math.floor(rand() * 8);
+        else if (isDinner) orderCount = 4 + Math.floor(rand() * 9);
+        else if (isLate) orderCount = rand() < 0.9 ? 0 : 1;
+        else orderCount = rand() < 0.45 ? 0 : 1 + Math.floor(rand() * 3);
+
+        if (rand() > 0.98) orderCount += 5;
+
+        for (let i = 0; i < orderCount; i++) {
+          const minuteOffset = Math.floor(rand() * 15);
+          const seconds = Math.floor(rand() * 60);
+          const [h, m] = bucket.split(':').map(Number);
+          const dateObj = new Date(`${dateStr}T00:00:00`);
+          dateObj.setHours(h, m + minuteOffset, seconds, 0);
+
+          orders.push({
+            orderId: `${dateStr.replace(/-/g, '')}-${String(serial++).padStart(5, '0')}`,
+            orderTime: dateObj.toISOString(),
+            orderStatus: rand() < 0.9 ? '已完成' : '已取消',
+            paidAmount: Number((14 + rand() * 18 + (isDinner ? 2 : 0)).toFixed(2))
+          });
+        }
+      }
+      return orders;
+    }
+
+    const simulatedStore = {};
+    const uploadedStore = {};
+    let uploadMode = false;
+
+    function getSimulatedOrders(dateStr) {
+      if (!simulatedStore[dateStr]) simulatedStore[dateStr] = generateRawOrdersForDate(dateStr);
+      return simulatedStore[dateStr];
+    }
+
+    function getRawOrders(dateStr) {
+      if (uploadMode) return uploadedStore[dateStr] || [];
+      return getSimulatedOrders(dateStr);
+    }
+
+    function bucketFloorLabel(dateObj) {
+      const h = String(dateObj.getHours()).padStart(2, '0');
+      const m = String(Math.floor(dateObj.getMinutes() / 15) * 15).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+
+    function processOrdersToSeries(dateStr, rawOrders) {
+      const buckets = Object.fromEntries(
+        bucketLabels.map((label) => [label, { time: label, orderCount: 0, paidSum: 0, avgPaid: null }])
+      );
+
+      rawOrders
+        .filter((o) => o.orderStatus === '已完成')
+        .forEach((o) => {
+          if (!o.orderTime) return;
+          const dateObj = new Date(o.orderTime);
+          if (Number.isNaN(dateObj.getTime())) return;
+
+          const orderDate = toDateStr(dateObj);
+          if (orderDate !== dateStr) return;
+
+          const bucket = bucketFloorLabel(dateObj);
+          const row = buckets[bucket];
+          row.orderCount += 1;
+          row.paidSum = Number((row.paidSum + Number(o.paidAmount || 0)).toFixed(2));
+        });
+
+      const series = bucketLabels.map((label) => {
+        const row = buckets[label];
+        row.avgPaid = row.orderCount > 0 ? Number((row.paidSum / row.orderCount).toFixed(2)) : null;
+        return row;
+      });
+
+      const totalOrders = series.reduce((acc, cur) => acc + cur.orderCount, 0);
+      const totalPaid = Number(series.reduce((acc, cur) => acc + cur.paidSum, 0).toFixed(2));
+      const avgPaid = totalOrders > 0 ? Number((totalPaid / totalOrders).toFixed(2)) : 0;
+      const peak = series.reduce((best, cur) => (cur.orderCount > best.orderCount ? cur : best), series[0]);
+
+      return {
+        summary: {
+          totalOrders,
+          avgPaid,
+          peakBucket: peak.time,
+          peakOrders: peak.orderCount,
+          paidSum: totalPaid
+        },
+        series
+      };
+    }
+
+    function getAvgPaidAnomalies(series) {
+      const valid = series.filter((x) => x.avgPaid != null).map((x) => x.avgPaid);
+      if (valid.length < 6) return [];
+      const sorted = [...valid].sort((a, b) => a - b);
+      const p10 = sorted[Math.floor(sorted.length * 0.1)];
+      const p90 = sorted[Math.floor(sorted.length * 0.9)];
+
+      return series
+        .filter((x) => x.avgPaid != null && (x.avgPaid <= p10 || x.avgPaid >= p90))
+        .slice(0, 6)
+        .map((x) => ({
+          name: x.avgPaid >= p90 ? '高客单' : '低客单',
+          coord: [x.time, x.avgPaid],
+          value: x.avgPaid
+        }));
+    }
+
+    function renderSummary(summary) {
+      const cards = [
+        { label: '总订单', value: String(summary.totalOrders) },
+        { label: '实付客单价', value: `¥${summary.avgPaid.toFixed(2)}` },
+        { label: '峰值时段', value: summary.peakBucket },
+        { label: '峰值订单量', value: String(summary.peakOrders) },
+        { label: '订单总实付', value: `¥${summary.paidSum.toFixed(2)}` }
+      ];
+
+      summaryEl.innerHTML = cards
+        .map((c) => `<article class="summary-item"><p>${c.label}</p><h3>${c.value}</h3></article>`)
+        .join('');
+    }
+
+    function render(dateStr) {
+      const data = processOrdersToSeries(dateStr, getRawOrders(dateStr));
+      const orderSeries = data.series.map((x) => x.orderCount);
+      const avgPaidSeries = data.series.map((x) => x.avgPaid);
+      const anomalies = getAvgPaidAnomalies(data.series);
+
+      chart.setOption({
+        animationDuration: 360,
+        title: { text: `${dateStr} 经营心电图`, left: 'center' },
+        legend: { top: 30, data: ['订单量', '平均客单价'] },
+        grid: { top: 78, left: 56, right: 64, bottom: 56 },
+        tooltip: {
+          trigger: 'axis',
+          formatter(params) {
+            const row = data.series[params[0].dataIndex];
+            const avgText = row.avgPaid == null ? '-' : `¥${row.avgPaid.toFixed(2)}`;
+            return [
+              `<b>${row.time}</b>`,
+              `订单量：${row.orderCount}`,
+              `平均客单价：${avgText}`,
+              `订单总实付：¥${row.paidSum.toFixed(2)}`
+            ].join('<br/>');
+          }
+        },
+        xAxis: {
+          type: 'category',
+          data: bucketLabels,
+          axisLabel: {
+            interval: 3,
+            formatter(v) {
+              return v.endsWith(':00') ? v : '';
+            }
+          }
+        },
+        yAxis: [
+          { type: 'value', name: '订单量', minInterval: 1 },
+          { type: 'value', name: '平均客单价(¥)' }
+        ],
+        series: [
+          {
+            name: '订单量',
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 0,
+            data: orderSeries,
+            symbolSize: 4,
+            lineStyle: { color: '#2563eb', width: 2 },
+            itemStyle: { color: '#2563eb' },
+            markPoint: {
+              symbolSize: 42,
+              data: [{
+                name: '订单峰值',
+                coord: [data.summary.peakBucket, data.summary.peakOrders],
+                value: data.summary.peakOrders
+              }]
+            }
+          },
+          {
+            name: '平均客单价',
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 1,
+            data: avgPaidSeries,
+            connectNulls: false,
+            symbolSize: 4,
+            lineStyle: { color: '#f97316', width: 2 },
+            itemStyle: { color: '#f97316' },
+            markPoint: {
+              symbolSize: 30,
+              data: anomalies,
+              label: { fontSize: 10 }
+            }
+          }
+        ]
+      });
+
+      renderSummary(data.summary);
+      syncNavButtons();
+    }
+
+    function clampDate(dateStr) {
+      const dt = new Date(`${dateStr}T00:00:00`);
+      if (dt < minDate) return toDateStr(minDate);
+      if (dt > today) return toDateStr(today);
+      return dateStr;
+    }
+
+    function syncNavButtons() {
+      prevBtn.disabled = datePicker.value <= toDateStr(minDate);
+      nextBtn.disabled = datePicker.value >= toDateStr(today);
+    }
+
+    function shiftDate(days) {
+      const dt = new Date(`${datePicker.value}T00:00:00`);
+      dt.setDate(dt.getDate() + days);
+      datePicker.value = clampDate(toDateStr(dt));
+      render(datePicker.value);
+    }
+
+    function stripBOM(text) {
+      return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+    }
+
+    function splitCsvLine(line) {
+      const out = [];
+      let curr = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            curr += '"';
+            i += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(curr.trim());
+          curr = '';
+        } else {
+          curr += ch;
+        }
+      }
+      out.push(curr.trim());
+      return out;
+    }
+
+    function parseCsv(text) {
+      const lines = stripBOM(text)
+        .split(/\r?\n/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (lines.length < 2) {
+        throw new Error('CSV 内容不足，至少需要表头 + 1行数据');
+      }
+
+      const headers = splitCsvLine(lines[0]);
+      const rows = lines.slice(1).map(splitCsvLine);
+      return { headers, rows };
+    }
+
+    function pickColumn(headerMap, candidates) {
+      for (const name of candidates) {
+        if (headerMap[name] != null) return headerMap[name];
+      }
+      return -1;
+    }
+
+    function buildOrderTime(dateVal, timeVal) {
+      const datePart = (dateVal || '').replace(/\//g, '-').trim();
+      const timePart = (timeVal || '').trim();
+
+      if (!timePart && datePart) return `${datePart}T00:00:00`;
+
+      if (/^\d{4}-\d{2}-\d{2}T/.test(timePart)) return timePart;
+      if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(timePart)) return timePart.replace(' ', 'T');
+
+      if (datePart && /^\d{1,2}:\d{2}(:\d{2})?$/.test(timePart)) {
+        const parts = timePart.split(':');
+        const hh = parts[0].padStart(2, '0');
+        const mm = parts[1];
+        const ss = parts[2] || '00';
+        return `${datePart}T${hh}:${mm}:${ss}`;
+      }
+
+      return `${datePart}T${timePart}`;
+    }
+
+    function transformMeituanCsvToOrders(csvText) {
+      const { headers, rows } = parseCsv(csvText);
+      const headerMap = Object.fromEntries(headers.map((h, i) => [h, i]));
+
+      const idxDate = pickColumn(headerMap, ['日期', '下单日期', '订单日期']);
+      const idxTime = pickColumn(headerMap, ['下单时间', '时间', '下单时刻']);
+      const idxStatus = pickColumn(headerMap, ['订单状态', '状态']);
+      const idxPaid = pickColumn(headerMap, ['订单实付', '实付金额', '实收金额', '支付金额']);
+      const idxOrderId = pickColumn(headerMap, ['订单编号', '订单号', '流水号']);
+
+      if ([idxDate, idxTime, idxStatus, idxPaid, idxOrderId].some((idx) => idx < 0)) {
+        throw new Error('CSV 缺少必要列：日期/下单时间/订单状态/订单实付/订单编号');
+      }
+
+      const orders = rows.map((cells, i) => {
+        const dateVal = cells[idxDate] || '';
+        const timeVal = cells[idxTime] || '';
+        const orderTime = buildOrderTime(dateVal, timeVal);
+        const paidText = (cells[idxPaid] || '0').replace(/[¥,\s]/g, '');
+
+        return {
+          orderId: cells[idxOrderId] || `csv-${i + 1}`,
+          orderTime,
+          orderStatus: cells[idxStatus] || '',
+          paidAmount: Number(paidText || 0)
+        };
+      });
+
+      return orders.filter((o) => !Number.isNaN(new Date(o.orderTime).getTime()));
+    }
+
+    function groupOrdersByDate(orders) {
+      const map = {};
+      for (const order of orders) {
+        const dt = new Date(order.orderTime);
+        const date = toDateStr(dt);
+        if (!map[date]) map[date] = [];
+        map[date].push(order);
+      }
+      return map;
+    }
+
+    async function readFileText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取文件失败'));
+        reader.readAsText(file, 'utf-8');
+      });
+    }
+
+    loadCsvBtn.addEventListener('click', async () => {
+      try {
+        const file = csvFileInput.files && csvFileInput.files[0];
+        if (!file) throw new Error('请先选择 CSV 文件');
+
+        const text = await readFileText(file);
+        const orders = transformMeituanCsvToOrders(text);
+        if (!orders.length) throw new Error('未解析到有效订单数据');
+
+        const grouped = groupOrdersByDate(orders);
+        Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
+        Object.assign(uploadedStore, grouped);
+
+        uploadMode = true;
+        setModeLabel(true);
+
+        const availableDates = Object.keys(grouped).sort();
+        const latestAvailable = availableDates[availableDates.length - 1];
+
+        datePicker.value = clampDate(latestAvailable || datePicker.value);
+        render(datePicker.value);
+        showStatus(`上传成功：共 ${orders.length} 条订单，覆盖 ${availableDates.length} 天。\n已切换为 CSV 上传模式。`);
+      } catch (err) {
+        showStatus(`上传失败：${err.message}`, true);
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      uploadMode = false;
+      setModeLabel(false);
+      render(datePicker.value);
+      showStatus('已恢复模拟模式');
+    });
+
+    datePicker.min = toDateStr(minDate);
+    datePicker.max = toDateStr(today);
+    datePicker.value = toDateStr(today);
+
+    prevBtn.addEventListener('click', () => shiftDate(-1));
+    nextBtn.addEventListener('click', () => shiftDate(1));
+    datePicker.addEventListener('change', () => {
+      datePicker.value = clampDate(datePicker.value);
+      render(datePicker.value);
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const url = chart.getDataURL({ pixelRatio: 2, backgroundColor: '#fff' });
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `经营心电图-${datePicker.value}.png`;
+      a.click();
+    });
+
+    window.addEventListener('resize', () => chart.resize());
+
+    setModeLabel(false);
+    render(datePicker.value);
+  </script>
+</body>
+</html>

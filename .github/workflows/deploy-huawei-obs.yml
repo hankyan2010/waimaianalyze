@@ -1,0 +1,55 @@
+name: Deploy to Huawei OBS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["work", "main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install AWS CLI (for OBS S3 API)
+        run: |
+          python -m pip install --upgrade pip
+          pip install awscli
+
+      - name: Validate required secrets
+        env:
+          HWC_AK: ${{ secrets.HWC_AK }}
+          HWC_SK: ${{ secrets.HWC_SK }}
+          HWC_REGION: ${{ secrets.HWC_REGION }}
+          HWC_OBS_BUCKET: ${{ secrets.HWC_OBS_BUCKET }}
+        run: |
+          test -n "$HWC_AK"
+          test -n "$HWC_SK"
+          test -n "$HWC_REGION"
+          test -n "$HWC_OBS_BUCKET"
+
+      - name: Sync static files to OBS bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.HWC_AK }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HWC_SK }}
+          AWS_DEFAULT_REGION: ${{ secrets.HWC_REGION }}
+          HWC_REGION: ${{ secrets.HWC_REGION }}
+          HWC_OBS_BUCKET: ${{ secrets.HWC_OBS_BUCKET }}
+        run: |
+          ENDPOINT="https://obs.${HWC_REGION}.myhuaweicloud.com"
+          aws s3 sync ./ "s3://${HWC_OBS_BUCKET}" \
+            --endpoint-url "$ENDPOINT" \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude "README_HUAWEI_DEPLOY.md" \
+            --exclude "*.log"
+
+      - name: Done
+        run: echo "Deployed to OBS bucket: ${{ secrets.HWC_OBS_BUCKET }}"
