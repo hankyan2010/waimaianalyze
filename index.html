@@ -106,6 +106,26 @@
     }
     .field { margin-bottom: 10px; }
     .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+    .compare-strip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f1f5f9;
+      color: #475569;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .compare-strip.empty { background: #fff7ed; color: #9a3412; }
+    .delta-up { color: #ef4444; font-weight: 600; }
+    .delta-down { color: #16a34a; font-weight: 600; }
+    .delta-flat { color: #64748b; font-weight: 600; }
+    .summary-item .compare {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
@@ -126,6 +146,7 @@
     <div class="layout">
       <div>
         <section class="card">
+          <div id="compareStrip" class="compare-strip"></div>
           <div id="chart"></div>
         </section>
         <section class="card">
@@ -161,6 +182,7 @@
     const nextBtn = document.getElementById('nextBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const summaryEl = document.getElementById('summary');
+    const compareStripEl = document.getElementById('compareStrip');
     const csvFileInput = document.getElementById('csvFile');
     const loadCsvBtn = document.getElementById('loadCsvBtn');
     const resetBtn = document.getElementById('resetBtn');
@@ -185,6 +207,41 @@
       const h = String(Math.floor(minutes / 60)).padStart(2, '0');
       const m = String(minutes % 60).padStart(2, '0');
       return `${h}:${m}`;
+    });
+
+    const WEEKDAY_CN = ['日', '一', '二', '三', '四', '五', '六'];
+    function lastWeekDateStr(dateStr) {
+      const dt = new Date(`${dateStr}T00:00:00`);
+      dt.setDate(dt.getDate() - 7);
+      return toDateStr(dt);
+    }
+    function weekdayLabel(dateStr) {
+      const dt = new Date(`${dateStr}T00:00:00`);
+      return `周${WEEKDAY_CN[dt.getDay()]}`;
+    }
+    function bucketRange(label) {
+      const [h, m] = label.split(':').map(Number);
+      const endM = m + 14;
+      return `${label}~${String(h).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    }
+    function formatDelta(value, prefix = '') {
+      if (value === 0 || Number.isNaN(value)) {
+        return `<span class="delta-flat">持平</span>`;
+      }
+      const abs = Math.abs(value);
+      const text = `${prefix}${abs.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      return value > 0
+        ? `<span class="delta-up">↑${text}</span>`
+        : `<span class="delta-down">↓${text}</span>`;
+    }
+
+    // Synthetic 商圈同行均值 (peer benchmark) — smooth bimodal pattern
+    const peerBenchmarkOrders = bucketLabels.map((label) => {
+      const [h, m] = label.split(':').map(Number);
+      const t = h + m / 60;
+      const lunch = Math.exp(-Math.pow((t - 12) / 1.6, 2)) * 3.2;
+      const dinner = Math.exp(-Math.pow((t - 19) / 1.9, 2)) * 4.0;
+      return Number((lunch + dinner + 0.15).toFixed(2));
     });
 
     function showStatus(msg, isError = false) {
@@ -323,76 +380,204 @@
         }));
     }
 
-    function renderSummary(summary) {
+    function renderSummary(summary, lastWeekSummary, lastWeekTag) {
+      const compareTxt = (delta, prefix = '') =>
+        lastWeekSummary
+          ? `比${lastWeekTag} ${formatDelta(delta, prefix)}`
+          : `<span class="delta-flat">无对比</span>`;
+
+      const orderDelta = lastWeekSummary ? summary.totalOrders - lastWeekSummary.totalOrders : 0;
+      const avgPaidDelta = lastWeekSummary
+        ? Number((summary.avgPaid - lastWeekSummary.avgPaid).toFixed(2))
+        : 0;
+      const paidDelta = lastWeekSummary
+        ? Number((summary.paidSum - lastWeekSummary.paidSum).toFixed(2))
+        : 0;
+
       const cards = [
-        { label: '总订单', value: String(summary.totalOrders) },
-        { label: '实付客单价', value: `¥${summary.avgPaid.toFixed(2)}` },
-        { label: '峰值时段', value: summary.peakBucket },
-        { label: '峰值订单量', value: String(summary.peakOrders) },
-        { label: '订单总实付', value: `¥${summary.paidSum.toFixed(2)}` }
+        { label: '总订单', value: String(summary.totalOrders), compare: compareTxt(orderDelta) },
+        { label: '实付客单价', value: `¥${summary.avgPaid.toFixed(2)}`, compare: compareTxt(avgPaidDelta, '¥') },
+        { label: '峰值时段', value: summary.peakBucket, compare: `${summary.peakOrders} 单` },
+        { label: '订单总实付', value: `¥${summary.paidSum.toFixed(2)}`, compare: compareTxt(paidDelta, '¥') }
       ];
 
       summaryEl.innerHTML = cards
-        .map((c) => `<article class="summary-item"><p>${c.label}</p><h3>${c.value}</h3></article>`)
+        .map((c) => `<article class="summary-item"><p>${c.label}</p><h3>${c.value}</h3><div class="compare">${c.compare}</div></article>`)
         .join('');
     }
 
     function render(dateStr) {
       const data = processOrdersToSeries(dateStr, getRawOrders(dateStr));
+
+      const lastWeek = lastWeekDateStr(dateStr);
+      const lastWeekRaw = getRawOrders(lastWeek);
+      const hasLastWeek = lastWeekRaw.length > 0;
+      const lastWeekData = hasLastWeek
+        ? processOrdersToSeries(lastWeek, lastWeekRaw)
+        : null;
+      const lastWeekTag = weekdayLabel(lastWeek);
+
       const orderSeries = data.series.map((x) => x.orderCount);
+      const lastWeekOrderSeries = hasLastWeek
+        ? lastWeekData.series.map((x) => x.orderCount)
+        : new Array(BUCKET_COUNT).fill(null);
       const avgPaidSeries = data.series.map((x) => x.avgPaid);
       const anomalies = getAvgPaidAnomalies(data.series);
 
+      // Compare strip
+      if (hasLastWeek) {
+        const orderDelta = data.summary.totalOrders - lastWeekData.summary.totalOrders;
+        const paidDelta = Number((data.summary.paidSum - lastWeekData.summary.paidSum).toFixed(2));
+        compareStripEl.classList.remove('empty');
+        compareStripEl.innerHTML =
+          `比${lastWeekTag} 订单 ${formatDelta(orderDelta)} · 实付 ${formatDelta(paidDelta, '¥')}`;
+      } else {
+        compareStripEl.classList.add('empty');
+        compareStripEl.innerHTML = `比${lastWeekTag} 暂无对比数据`;
+      }
+
+      const lastWeekSeriesName = `${lastWeekTag}订单`;
+
       chart.setOption({
         animationDuration: 360,
-        title: { text: `${dateStr} 经营心电图`, left: 'center' },
-        legend: { top: 30, data: ['订单量', '平均客单价'] },
-        grid: { top: 78, left: 56, right: 64, bottom: 56 },
+        title: { text: `${dateStr} 经营心电图`, left: 'center', textStyle: { fontSize: 16, color: '#0f172a' } },
+        legend: {
+          top: 32,
+          icon: 'circle',
+          itemWidth: 8,
+          itemHeight: 8,
+          itemGap: 18,
+          textStyle: { color: '#475569', fontSize: 12 },
+          data: ['昨日订单', lastWeekSeriesName, '商圈同行均值', '平均客单价']
+        },
+        grid: { top: 84, left: 56, right: 64, bottom: 48 },
         tooltip: {
           trigger: 'axis',
+          backgroundColor: 'rgba(15, 23, 42, 0.92)',
+          borderWidth: 0,
+          padding: [10, 14],
+          textStyle: { color: '#f8fafc', fontSize: 12 },
+          axisPointer: {
+            type: 'line',
+            lineStyle: { color: 'rgba(148, 163, 184, 0.5)', type: 'dashed' }
+          },
           formatter(params) {
-            const row = data.series[params[0].dataIndex];
-            const avgText = row.avgPaid == null ? '-' : `¥${row.avgPaid.toFixed(2)}`;
-            return [
-              `<b>${row.time}</b>`,
-              `订单量：${row.orderCount}`,
-              `平均客单价：${avgText}`,
-              `订单总实付：¥${row.paidSum.toFixed(2)}`
-            ].join('<br/>');
+            const idx = params[0].dataIndex;
+            const row = data.series[idx];
+            const peerVal = peerBenchmarkOrders[idx];
+            const dot = (color, dashed = false) =>
+              `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dashed ? 'transparent' : color};border:${dashed ? '1px dashed ' + color : 'none'};margin-right:6px;vertical-align:middle"></span>`;
+            const lines = [
+              `<div style="font-weight:600;margin-bottom:6px">${bucketRange(row.time)}</div>`,
+              `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#1d4ed8')}昨日</span><b>${row.orderCount} 单</b></div>`
+            ];
+            if (hasLastWeek) {
+              const lwRow = lastWeekData.series[idx];
+              lines.push(
+                `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#93c5fd', true)}${lastWeekTag}</span><b>${lwRow.orderCount} 单</b></div>`
+              );
+            }
+            lines.push(
+              `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#f97316')}商圈同行均值</span><b>${peerVal.toFixed(2)}</b></div>`
+            );
+            if (row.avgPaid != null) {
+              lines.push(
+                `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(148,163,184,0.25);color:#cbd5e1">客单价 ¥${row.avgPaid.toFixed(2)} · 总实付 ¥${row.paidSum.toFixed(2)}</div>`
+              );
+            }
+            return lines.join('');
           }
         },
         xAxis: {
           type: 'category',
           data: bucketLabels,
+          boundaryGap: false,
+          axisLine: { lineStyle: { color: '#e2e8f0' } },
+          axisTick: { show: false },
           axisLabel: {
-            interval: 3,
+            color: '#94a3b8',
+            interval: 7,
             formatter(v) {
-              return v.endsWith(':00') ? v : '';
+              return v.endsWith(':00') ? Number(v.slice(0, 2)).toString() : '';
             }
           }
         },
         yAxis: [
-          { type: 'value', name: '订单量', minInterval: 1 },
-          { type: 'value', name: '平均客单价(¥)' }
+          {
+            type: 'value',
+            name: '订单量',
+            minInterval: 1,
+            nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { lineStyle: { color: '#f1f5f9' } },
+            axisLabel: { color: '#94a3b8' }
+          },
+          {
+            type: 'value',
+            name: '客单价(¥)',
+            nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { show: false },
+            axisLabel: { color: '#94a3b8' }
+          }
         ],
         series: [
           {
-            name: '订单量',
+            name: '昨日订单',
             type: 'line',
             smooth: true,
             yAxisIndex: 0,
             data: orderSeries,
-            symbolSize: 4,
-            lineStyle: { color: '#2563eb', width: 2 },
-            itemStyle: { color: '#2563eb' },
+            showSymbol: false,
+            sampling: 'lttb',
+            lineStyle: { color: '#1d4ed8', width: 2.5 },
+            itemStyle: { color: '#1d4ed8' },
+            emphasis: { focus: 'series', scale: true },
+            areaStyle: {
+              color: {
+                type: 'linear',
+                x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(29, 78, 216, 0.32)' },
+                  { offset: 1, color: 'rgba(29, 78, 216, 0.02)' }
+                ]
+              }
+            },
             markPoint: {
               symbolSize: 42,
+              itemStyle: { color: '#1d4ed8' },
               data: [{
                 name: '订单峰值',
                 coord: [data.summary.peakBucket, data.summary.peakOrders],
                 value: data.summary.peakOrders
               }]
-            }
+            },
+            z: 3
+          },
+          {
+            name: lastWeekSeriesName,
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 0,
+            data: lastWeekOrderSeries,
+            showSymbol: false,
+            connectNulls: false,
+            lineStyle: { color: '#93c5fd', width: 2, type: 'dashed' },
+            itemStyle: { color: '#93c5fd' },
+            z: 2
+          },
+          {
+            name: '商圈同行均值',
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 0,
+            data: peerBenchmarkOrders,
+            showSymbol: false,
+            lineStyle: { color: '#f97316', width: 2 },
+            itemStyle: { color: '#f97316' },
+            z: 1
           },
           {
             name: '平均客单价',
@@ -401,9 +586,9 @@
             yAxisIndex: 1,
             data: avgPaidSeries,
             connectNulls: false,
-            symbolSize: 4,
-            lineStyle: { color: '#f97316', width: 2 },
-            itemStyle: { color: '#f97316' },
+            showSymbol: false,
+            lineStyle: { color: '#facc15', width: 1.5, type: 'dotted' },
+            itemStyle: { color: '#facc15' },
             markPoint: {
               symbolSize: 30,
               data: anomalies,
@@ -413,7 +598,7 @@
         ]
       });
 
-      renderSummary(data.summary);
+      renderSummary(data.summary, lastWeekData ? lastWeekData.summary : null, lastWeekTag);
       syncNavButtons();
     }
 
