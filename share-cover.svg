@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="rgba(255,255,255,0.45)"/>
+      <stop offset="1" stop-color="rgba(255,255,255,0.02)"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="600" fill="url(#bg)"/>
+
+  <text x="300" y="100" fill="#fff" font-size="56" font-weight="800" text-anchor="middle">经营心电图</text>
+  <text x="300" y="148" fill="rgba(255,255,255,0.88)" font-size="24" text-anchor="middle">美团后台看不见的 15 分钟订单曲线</text>
+
+  <g transform="translate(60 200)">
+    <path d="M0 180 L40 170 L70 175 L100 120 L130 90 L160 130 L200 60 L240 100 L280 50 L320 70 L360 40 L400 110 L440 150 L480 130 L480 200 L0 200 Z" fill="url(#area)"/>
+    <path d="M0 180 L40 170 L70 175 L100 120 L130 90 L160 130 L200 60 L240 100 L280 50 L320 70 L360 40 L400 110 L440 150 L480 130" stroke="url(#line)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="360" cy="40" r="9" fill="#fff" stroke="#f97316" stroke-width="3"/>
+    <text x="360" y="22" fill="#fff" font-size="18" font-weight="700" text-anchor="middle">峰值 19:30</text>
+  </g>
+
+  <g transform="translate(60 460)">
+    <rect width="480" height="86" rx="14" fill="rgba(255,255,255,0.16)"/>
+    <text x="240" y="40" fill="#fff" font-size="22" font-weight="700" text-anchor="middle">满减 · 推广 · 活动定档</text>
+    <text x="240" y="68" fill="rgba(255,255,255,0.85)" font-size="16" text-anchor="middle">精确到每一刻钟，外卖老板的隐藏武器</text>
+  </g>
+</svg>
