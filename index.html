@@ -64,7 +64,24 @@
       gap: 14px;
     }
     @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
-    #chart { width: 100%; height: 500px; }
+    .chart-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -4px;
+      padding: 0 4px 4px;
+      scrollbar-width: thin;
+    }
+    .chart-scroll::-webkit-scrollbar { height: 6px; }
+    .chart-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    #chart { width: 100%; min-width: 720px; height: 500px; }
+    .chart-hint {
+      display: none;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -126,6 +143,22 @@
       font-size: 12px;
       color: var(--muted);
     }
+    @media (max-width: 768px) {
+      body { padding: 12px; }
+      .container { max-width: 100%; }
+      .card { padding: 14px; border-radius: 12px; margin-bottom: 12px; }
+      h1 { font-size: 22px; }
+      .desc { font-size: 12px; }
+      .topbar { gap: 10px; }
+      .actions { width: 100%; justify-content: flex-start; }
+      .actions button, .actions input { flex: 0 0 auto; }
+      .chart-scroll { margin: 0 -14px; padding: 0 14px 6px; }
+      #chart { min-width: 1100px; height: 440px; }
+      .chart-hint { display: block; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-item h3 { font-size: 18px; }
+      .compare-strip { font-size: 12px; padding: 5px 12px; }
+    }
   </style>
 </head>
 <body>
@@ -147,7 +180,10 @@
       <div>
         <section class="card">
           <div id="compareStrip" class="compare-strip"></div>
-          <div id="chart"></div>
+          <div class="chart-scroll">
+            <div id="chart"></div>
+          </div>
+          <p class="chart-hint">← 左右滑动查看完整曲线 →</p>
         </section>
         <section class="card">
           <div id="summary" class="summary-grid"></div>
@@ -372,7 +408,7 @@
 
       return series
         .filter((x) => x.avgPaid != null && (x.avgPaid <= p10 || x.avgPaid >= p90))
-        .slice(0, 6)
+        .slice(0, 3)
         .map((x) => ({
           name: x.avgPaid >= p90 ? '高客单' : '低客单',
           coord: [x.time, x.avgPaid],
@@ -448,11 +484,19 @@
           itemHeight: 8,
           itemGap: 18,
           textStyle: { color: '#475569', fontSize: 12 },
-          data: ['昨日订单', lastWeekSeriesName, '商圈同行均值', '平均客单价']
+          data: ['昨日订单', lastWeekSeriesName, '商圈同行均值', '平均客单价'],
+          selected: {
+            '昨日订单': true,
+            [lastWeekSeriesName]: true,
+            '商圈同行均值': true,
+            '平均客单价': false
+          }
         },
         grid: { top: 84, left: 56, right: 64, bottom: 48 },
         tooltip: {
           trigger: 'axis',
+          appendToBody: true,
+          confine: true,
           backgroundColor: 'rgba(15, 23, 42, 0.92)',
           borderWidth: 0,
           padding: [10, 14],
