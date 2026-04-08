@@ -3,7 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>经营心电图</title>
+  <title>经营心电图 - 外卖门店经营数据可视化</title>
+  <meta name="description" content="15分钟粒度订单量+平均客单价双轴曲线，一张图看清门店经营节奏" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="经营心电图 - 外卖门店经营数据可视化" />
+  <meta property="og:description" content="15分钟粒度订单量+平均客单价双轴曲线，一张图看清门店经���节奏" />
+  <meta property="og:image" content="http://waimaiketang.com/waimaianalyze/share-cover.png" />
+  <meta property="og:image:width" content="600" />
+  <meta property="og:image:height" content="600" />
+  <meta property="og:url" content="http://waimaiketang.com/waimaianalyze/" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="经营心电图 - 外卖门店经营数据可视化" />
+  <meta name="twitter:description" content="15分钟粒度订单量+平均客单价双轴曲线，一张图看清门店经营节奏" />
+  <meta name="twitter:image" content="http://waimaiketang.com/waimaianalyze/share-cover.png" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
     :root {
@@ -614,6 +627,58 @@
 
     setModeLabel(false);
     render(datePicker.value);
+  </script>
+
+  <script>
+  (function() {
+    var ua = navigator.userAgent.toLowerCase();
+    if (ua.indexOf('micromessenger') === -1) return;
+
+    var WX_CONFIG_URL = 'http://waimaiketang.com/wx-config';
+    var SHARE_IMG = 'http://waimaiketang.com/waimaianalyze/share-cover.png';
+    var debugMode = window.location.search.indexOf('wxdebug') !== -1;
+
+    var script = document.createElement('script');
+    script.src = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
+    script.onload = function() {
+      var pageUrl = window.location.href.split('#')[0];
+      fetch(WX_CONFIG_URL + '?url=' + encodeURIComponent(pageUrl))
+        .then(function(res) { return res.json(); })
+        .then(function(config) {
+          if (config.error || !config.appId) {
+            console.warn('[wx-share] config error:', config.error);
+            return;
+          }
+          wx.config({
+            debug: debugMode,
+            appId: config.appId,
+            timestamp: config.timestamp,
+            nonceStr: config.nonceStr,
+            signature: config.signature,
+            jsApiList: ['updateAppMessageShareData', 'updateTimelineShareData']
+          });
+          wx.ready(function() {
+            console.info('[wx-share] configured ok');
+            wx.updateAppMessageShareData({
+              title: '经营心电图 - 外卖门店经营数据可视化',
+              desc: '15分钟粒度订单量+平均客单价双轴曲线，一张图看清门店经营节奏',
+              link: window.location.href,
+              imgUrl: SHARE_IMG
+            });
+            wx.updateTimelineShareData({
+              title: '经营心电图 - 外卖门店经营数据可视化',
+              link: window.location.href,
+              imgUrl: SHARE_IMG
+            });
+          });
+          wx.error(function(err) {
+            console.warn('[wx-share] wx.error:', err);
+          });
+        })
+        .catch(function(e) { console.warn('[wx-share] fetch error:', e); });
+    };
+    document.head.appendChild(script);
+  })();
   </script>
 </body>
 </html>

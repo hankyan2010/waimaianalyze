@@ -20,12 +20,12 @@ jobs:
           echo "$SSH_KEY" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
 
-          # 上传 index.html 到 Apache 目录
+          # 上传文件到 Apache 目录
           scp -i /tmp/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            index.html \
-            ${{ secrets.ECS_USERNAME }}@${{ secrets.ECS_HOST }}:/var/www/html/waimaianalyze/index.html
+            index.html share-cover.png \
+            ${{ secrets.ECS_USERNAME }}@${{ secrets.ECS_HOST }}:/var/www/html/waimaianalyze/
 
           rm -f /tmp/deploy_key
           echo "✅ 部署完成：http://waimaiketang.com/waimaianalyze/"
