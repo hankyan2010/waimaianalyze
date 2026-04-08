@@ -17,6 +17,7 @@
 
   <link rel="icon" type="image/svg+xml" href="share-cover.svg" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js" onerror="window.__qrLoadFailed=true"></script>
   <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js" onerror="window.__wxSdkLoadFailed=true"></script>
   <style>
     :root {
@@ -398,7 +399,11 @@
 <body>
   <div class="container">
     <section class="hero">
-      <h1>经营心电图 <span class="mode-chip" id="modeChip">当前：模拟数据</span></h1>
+      <h1>
+        经营心电图
+        <span class="mode-chip" id="modeChip">当前：模拟数据</span>
+        <span class="mode-chip" id="creditsChip">剩 1 次分析</span>
+      </h1>
       <p class="tagline">
         美团后台<b>看不见</b>的<b>15 分钟</b>订单 &amp; 客单价曲线 ——
         把满减、推广、活动精确到每一刻钟，外卖老板的隐藏武器。
@@ -450,21 +455,21 @@
     </div>
   </div>
 
-  <!-- ====== 分享解锁蒙版 ====== -->
+  <!-- ====== 分享解锁蒙版（新数据分析没额度时弹出）====== -->
   <div id="shareMask" class="share-mask" role="dialog" aria-modal="true">
     <div class="mask-card">
       <div class="wx-arrow-hint">点这里<br/>分享到朋友圈</div>
       <div class="lock-icon">🔓</div>
-      <h2>转发朋友圈，解锁继续查询</h2>
-      <p class="sub">看完这一次后，老板需要把这把秘密武器<br/>转给身边的同行，再继续探索高峰低谷。</p>
+      <h2>分析新数据需要 1 次额度</h2>
+      <p class="sub">你已用完免费额度。分享朋友圈即可继续<br/>分析这一份新上传的数据。</p>
       <div class="perks">
-        ✨ 转发一次解锁 <b>24 小时</b> 无限切换日期<br/>
-        🎁 同时还能让朋友少踩 <b>3 个</b> 满减坑<br/>
-        🤝 把好工具留给同行，是最划算的人情
+        ✨ 我已分享 → 立即获得 <b>+2 次</b> 分析额度<br/>
+        📲 海报上有专属二维码，好友扫码再 <b>+2 次</b><br/>
+        🆓 同一份数据切换日期不消耗额度
       </div>
       <div class="mask-actions">
         <button id="maskShareBtn" class="primary">📤 立即生成分享海报</button>
-        <button id="maskConfirmBtn">我已分享，立即解锁</button>
+        <button id="maskConfirmBtn">我已分享，领取 +2 次额度</button>
         <button id="maskCloseBtn" class="subtle">稍后再说</button>
       </div>
     </div>
@@ -478,7 +483,8 @@
       </div>
       <p class="poster-tip" id="posterTip" style="display:none">👆 长按图片保存到相册，再发到朋友圈</p>
       <div class="poster-actions">
-        <button id="posterDownloadBtn" class="primary">下载海报</button>
+        <button id="posterClaimBtn" class="primary">我已分享 +2</button>
+        <button id="posterDownloadBtn">下载海报</button>
         <button id="posterCloseBtn">关闭</button>
       </div>
     </div>
@@ -1073,20 +1079,15 @@
         if (!orders.length) throw new Error('未解析到有效订单数据');
 
         const grouped = groupOrdersByDate(orders);
-        Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
-        Object.assign(uploadedStore, grouped);
-
-        uploadMode = true;
-        setModeLabel(true);
-
         const availableDates = Object.keys(grouped).sort();
         const latestAvailable = availableDates[availableDates.length - 1];
 
-        datePicker.value = clampDate(latestAvailable || datePicker.value);
-        // CSV upload bypasses the share gate (user is committing data)
-        unlockShare();
-        attemptRender(datePicker.value);
-        showStatus(`上传成功：共 ${orders.length} 条订单，覆盖 ${availableDates.length} 天。\n已切换为 CSV 上传模式，并解锁 24 小时无限查询。`);
+        const ok = startUploadSession({ orders, grouped, latestDate: latestAvailable });
+        if (!ok) {
+          showStatus(`需要 1 次额度才能分析新数据。已用尽，请分享朋友圈领取 +${SHARE_REWARD} 次。`, true);
+          return;
+        }
+        showStatus(`分析成功：${orders.length} 条订单，覆盖 ${availableDates.length} 天。本次会话内可自由切换日期，剩余 ${getCredits()} 次额度。`);
       } catch (err) {
         showStatus(`上传失败：${err.message}`, true);
       }
@@ -1121,62 +1122,94 @@
     window.addEventListener('resize', () => chart.resize());
 
     // ============================================================
-    // 分享解锁机制 (share gate)
+    // 分享解锁机制 (credit gate)
+    // 计费模型：每"上传一份新数据"= 1 次会话 = 消耗 1 次额度
+    //         模拟数据 / 同一会话内换日期不消耗额度
+    //         分享朋友圈（点"我已分享"）= +2 额度
+    //         好友扫海报二维码 = +2 额度（需后端，未实装）
     // ============================================================
-    const SHARE_GATE_KEY = 'waimai_share_gate_v1';
-    const FREE_QUOTA = 1;
-    const UNLOCK_DURATION_MS = 24 * 60 * 60 * 1000;
+    const CREDIT_STATE_KEY = 'waimai_credits_v2';
+    const BROWSER_ID_KEY = 'waimai_browser_id';
+    const INITIAL_CREDITS = 1;
+    const SHARE_REWARD = 2;
 
     const shareMaskEl = document.getElementById('shareMask');
     const posterModalEl = document.getElementById('posterModal');
     const posterContentEl = document.getElementById('posterContent');
     const posterTipEl = document.getElementById('posterTip');
     const shareBtn = document.getElementById('shareBtn');
+    const creditsChip = document.getElementById('creditsChip');
 
     let lastSummary = null;
     let lastRenderedDate = null;
-    let pendingDate = null;
-    let memoryGateState = null;
+    let pendingUpload = null;       // 等待解锁的上传请求 { orders, grouped, latestDate }
+    let memoryCreditState = null;   // localStorage 不可用时的兜底
 
-    function getGateState() {
+    // ----- 浏览器身份（用于 QR 邀请链接，未来后端拿这个对账） -----
+    function getOrCreateBrowserId() {
       try {
-        const raw = localStorage.getItem(SHARE_GATE_KEY);
+        let id = localStorage.getItem(BROWSER_ID_KEY);
+        if (!id) {
+          id = 'b_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+          localStorage.setItem(BROWSER_ID_KEY, id);
+        }
+        return id;
+      } catch (e) {
+        return 'b_anon_' + Date.now().toString(36);
+      }
+    }
+    const browserId = getOrCreateBrowserId();
+
+    // ----- 落地参数 ?ref=xxx 记录"被谁拉来的"（后端实装后用于派发奖励）-----
+    function recordReferrer() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const ref = params.get('ref');
+        if (ref && ref !== browserId) {
+          localStorage.setItem('waimai_referred_by', ref);
+          // TODO: 后端就绪后调用 POST /api/credits/grant-on-scan { token, scannerId: browserId }
+        }
+      } catch (e) { /* ignore */ }
+    }
+    recordReferrer();
+
+    // ----- credit 状态 -----
+    function getCreditState() {
+      try {
+        const raw = localStorage.getItem(CREDIT_STATE_KEY);
         if (raw) return JSON.parse(raw);
       } catch (e) { /* ignore */ }
-      if (memoryGateState) return memoryGateState;
-      return { views: 0, unlockedUntil: 0 };
+      if (memoryCreditState) return memoryCreditState;
+      return { credits: INITIAL_CREDITS };
     }
 
-    function setGateState(state) {
-      memoryGateState = state;
-      try { localStorage.setItem(SHARE_GATE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    function setCreditState(state) {
+      memoryCreditState = state;
+      try { localStorage.setItem(CREDIT_STATE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+      updateCreditsChip();
     }
 
-    function isUnlocked() {
-      return Date.now() < getGateState().unlockedUntil;
+    function getCredits() {
+      return getCreditState().credits;
     }
 
-    function canRender() {
-      if (isUnlocked()) return true;
-      return getGateState().views < FREE_QUOTA;
+    function consumeOneCredit() {
+      const state = getCreditState();
+      state.credits = Math.max(0, state.credits - 1);
+      setCreditState(state);
     }
 
-    function consumeQuota() {
-      if (isUnlocked()) return;
-      const state = getGateState();
-      state.views += 1;
-      setGateState(state);
+    function addCredits(n) {
+      const state = getCreditState();
+      state.credits = state.credits + n;
+      setCreditState(state);
     }
 
-    function unlockShare() {
-      setGateState({ views: 0, unlockedUntil: Date.now() + UNLOCK_DURATION_MS });
-      hideShareMask();
-      if (pendingDate) {
-        const target = pendingDate;
-        pendingDate = null;
-        datePicker.value = target;
-        attemptRender(target);
-      }
+    function updateCreditsChip() {
+      if (!creditsChip) return;
+      const c = getCredits();
+      creditsChip.textContent = c > 0 ? `剩 ${c} 次分析` : '额度用尽 · 分享解锁';
+      creditsChip.style.background = c > 0 ? '' : 'rgba(254, 215, 170, 0.4)';
     }
 
     function showShareMask() {
@@ -1189,22 +1222,41 @@
       document.body.style.overflow = '';
     }
 
-    function attemptRender(dateStr) {
-      // Same date re-render is always free (no quota cost)
-      if (dateStr === lastRenderedDate) {
-        render(dateStr);
-        return true;
+    // 用户主动点"我已分享" / 蒙版"我已分享" → 立即奖励
+    function claimShareReward(opts) {
+      addCredits(SHARE_REWARD);
+      hideShareMask();
+      if (opts && opts.silent) return;
+      showStatus(`感谢分享！已 +${SHARE_REWARD} 次分析额度，当前剩余 ${getCredits()} 次。`);
+      // 如果有挂起的上传，自动重放
+      if (pendingUpload) {
+        const u = pendingUpload;
+        pendingUpload = null;
+        startUploadSession(u);
       }
-      if (lastRenderedDate && !canRender()) {
-        pendingDate = dateStr;
-        if (dateStr !== lastRenderedDate) datePicker.value = lastRenderedDate;
+    }
+
+    // ----- 会话级 gate -----
+    // 模拟模式 + 同一会话内换日期 → 直接 render，无额度消耗
+    function attemptRender(dateStr) {
+      render(dateStr);
+      lastRenderedDate = dateStr;
+    }
+
+    // 上传新数据 = 一次新会话 = 消耗 1 额度
+    function startUploadSession(payload) {
+      if (getCredits() < 1) {
+        pendingUpload = payload;
         showShareMask();
         return false;
       }
-      render(dateStr);
-      lastRenderedDate = dateStr;
-      consumeQuota();
-      pendingDate = null;
+      consumeOneCredit();
+      Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
+      Object.assign(uploadedStore, payload.grouped);
+      uploadMode = true;
+      setModeLabel(true);
+      datePicker.value = clampDate(payload.latestDate || datePicker.value);
+      attemptRender(datePicker.value);
       return true;
     }
 
@@ -1225,9 +1277,34 @@
       ctx.closePath();
     }
 
+    // 生成本次海报的唯一邀请 URL（含 browserId 和时间戳，后端就绪后会拿这个对账）
+    function buildInviteUrl() {
+      const t = Date.now().toString(36);
+      const base = location.origin + location.pathname;
+      // TODO: 后端就绪后改为 `${origin}/i/<server_token>` 形式
+      return `${base}?ref=${encodeURIComponent(browserId)}&t=${t}`;
+    }
+
+    async function generateQrDataUrl(text) {
+      if (typeof QRCode === 'undefined' || window.__qrLoadFailed) return null;
+      try {
+        return await QRCode.toDataURL(text, {
+          width: 240,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#1e3a8a', light: '#ffffff' }
+        });
+      } catch (e) {
+        console.warn('[qr] generation failed:', e);
+        return null;
+      }
+    }
+
     async function buildPosterDataUrl() {
       const chartUrl = chart.getDataURL({ pixelRatio: 2, backgroundColor: '#fff' });
       const summary = lastSummary || { totalOrders: 0, avgPaid: 0, peakBucket: '--:--', paidSum: 0, dateStr: datePicker.value };
+      const inviteUrl = buildInviteUrl();
+      const qrDataUrl = await generateQrDataUrl(inviteUrl);
 
       const W = 750, H = 1334;
       const canvas = document.createElement('canvas');
@@ -1312,34 +1389,60 @@
         console.warn('chart image draw failed:', e);
       }
 
-      // CTA
+      // ====== 底部 QR + CTA 区（左 QR · 右文案）======
+      // QR 白底圆角卡片
       ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
+      roundRect(ctx, 60, 1050, 220, 220, 16);
+      ctx.fill();
+
+      if (qrDataUrl) {
+        try {
+          await new Promise((resolve, reject) => {
+            const qrImg = new Image();
+            qrImg.onload = () => {
+              ctx.drawImage(qrImg, 80, 1070, 180, 180);
+              resolve();
+            };
+            qrImg.onerror = () => reject(new Error('qr load failed'));
+            qrImg.src = qrDataUrl;
+          });
+        } catch (e) {
+          // QR 加载失败，画一个占位
+          ctx.fillStyle = '#1e3a8a';
+          ctx.textAlign = 'center';
+          ctx.font = '20px sans-serif';
+          ctx.fillText('扫码看', 170, 1150);
+          ctx.fillText('心电图', 170, 1180);
+        }
+      } else {
+        ctx.fillStyle = '#1e3a8a';
+        ctx.textAlign = 'center';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('扫码看', 170, 1150);
+        ctx.fillText('心电图', 170, 1180);
+      }
+
+      // 右侧 CTA 文案
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
       ctx.font = 'bold 38px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-      ctx.fillText('外卖老板的隐藏武器', W / 2, 1090);
+      ctx.fillText('扫码看你家店', 310, 1110);
 
-      ctx.font = '24px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.86)';
-      ctx.fillText('扫码 / 长按识别，看你家店铺心电图', W / 2, 1140);
-
-      // Tag pills
-      const tags = ['📈 同期对比', '🆚 商圈均值', '💰 满减定档'];
       ctx.font = '22px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-      let tagX = W / 2 - 225;
-      tags.forEach((t) => {
-        const tw = ctx.measureText(t).width + 28;
-        ctx.fillStyle = 'rgba(255,255,255,0.18)';
-        roundRect(ctx, tagX, 1170, tw, 44, 22);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.fillText(t, tagX + tw / 2, 1200);
-        tagX += tw + 12;
-      });
+      ctx.fillStyle = 'rgba(255,255,255,0.86)';
+      ctx.fillText('15 分钟一个点', 310, 1150);
+      ctx.fillText('美团后台没有的曲线', 310, 1182);
+
+      // 高亮提示：好友扫码会奖励
+      ctx.fillStyle = '#fde68a';
+      ctx.font = 'bold 20px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillText('🎁 好友扫码 → 我 +2 次额度', 310, 1232);
 
       // Footer / domain
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.font = '20px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-      ctx.fillText(location.host || 'waimaianalyze', W / 2, 1280);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '18px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(location.host || 'waimaianalyze', W / 2, 1300);
 
       return canvas.toDataURL('image/png');
     }
@@ -1374,12 +1477,9 @@
       return {
         title: '我发现了美团后台看不见的秘密曲线',
         desc: '15 分钟粒度的订单 & 客单价心电图，精准定位每一个高峰和低谷。外卖老板的隐藏武器。',
-        link: location.href.split('#')[0],
+        link: buildInviteUrl(),
         imgUrl: new URL('share-cover.svg', location.href).href,
-        success: () => {
-          unlockShare();
-          showStatus('感谢分享！已解锁 24 小时无限查询。');
-        }
+        success: () => claimShareReward()
       };
     }
 
@@ -1433,12 +1533,16 @@
     });
 
     document.getElementById('maskConfirmBtn').addEventListener('click', () => {
-      unlockShare();
-      showStatus('已解锁 24 小时无限查询，感谢支持！');
+      claimShareReward();
     });
 
     document.getElementById('maskCloseBtn').addEventListener('click', () => {
       hideShareMask();
+    });
+
+    document.getElementById('posterClaimBtn').addEventListener('click', () => {
+      claimShareReward();
+      hidePosterModal();
     });
 
     document.getElementById('posterCloseBtn').addEventListener('click', hidePosterModal);
@@ -1464,9 +1568,8 @@
       if (document.hidden) {
         leftAt = Date.now();
       } else if (leftAt && Date.now() - leftAt > 5000 && shareMaskEl.classList.contains('show')) {
-        if (confirm('已经分享到朋友圈了吗？点确定即可解锁 24 小时无限查询。')) {
-          unlockShare();
-          showStatus('已解锁 24 小时无限查询，感谢支持！');
+        if (confirm(`已经分享到朋友圈了吗？点确定即可领取 +${SHARE_REWARD} 次分析额度。`)) {
+          claimShareReward();
         }
       }
     });
@@ -1474,6 +1577,7 @@
     // 微信内尝试配置原生分享（需要后端签名 endpoint）
     tryConfigureWxShare();
 
+    updateCreditsChip();
     setModeLabel(false);
     attemptRender(datePicker.value);
   </script>
