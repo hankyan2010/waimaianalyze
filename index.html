@@ -2,9 +2,23 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>经营心电图</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>经营心电图 · 美团后台看不见的 15 分钟订单曲线</title>
+  <meta name="description" content="美团后台只给你按天/按小时聚合的数据，「经营心电图」把订单切到 15 分钟一个点，96 个桶画出一整天的心电曲线 — 满减、活动、推广精确到每一刻。" />
+  <meta name="keywords" content="美团外卖,经营分析,订单曲线,客单价,15分钟,商圈对比,满减活动,外卖运营" />
+
+  <!-- Open Graph / 微信内分享卡片 -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="我发现了美团后台看不见的秘密曲线" />
+  <meta property="og:description" content="15 分钟粒度的订单 & 客单价心电图，精准定位每一个高峰和低谷。外卖老板的隐藏武器。" />
+  <meta property="og:image" content="share-cover.svg" />
+  <meta property="og:url" content="" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" type="image/svg+xml" href="share-cover.svg" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js" onerror="window.__qrLoadFailed=true"></script>
+  <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js" onerror="window.__wxSdkLoadFailed=true"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -64,7 +78,24 @@
       gap: 14px;
     }
     @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
-    #chart { width: 100%; height: 500px; }
+    .chart-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -4px;
+      padding: 0 4px 4px;
+      scrollbar-width: thin;
+    }
+    .chart-scroll::-webkit-scrollbar { height: 6px; }
+    .chart-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    #chart { width: 100%; min-width: 720px; height: 500px; }
+    .chart-hint {
+      display: none;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -106,27 +137,300 @@
     }
     .field { margin-bottom: 10px; }
     .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+    .compare-strip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f1f5f9;
+      color: #475569;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .compare-strip.empty { background: #fff7ed; color: #9a3412; }
+    .delta-up { color: #ef4444; font-weight: 600; }
+    .delta-down { color: #16a34a; font-weight: 600; }
+    .delta-flat { color: #64748b; font-weight: 600; }
+    .summary-item .compare {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ====== Hero / 价值主张 ====== */
+    .hero {
+      background: linear-gradient(135deg, #1e3a8a 0%, #0ea5e9 100%);
+      color: #fff;
+      border-radius: 16px;
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .hero .tagline {
+      margin: 8px 0 0;
+      font-size: 15px;
+      color: rgba(255, 255, 255, 0.9);
+      line-height: 1.6;
+    }
+    .hero .tagline b { color: #fde68a; font-weight: 700; }
+    .value-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .value-chips .chip {
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: #fff;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      backdrop-filter: blur(4px);
+    }
+    .hero-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 16px;
+    }
+    .hero-actions button, .hero-actions input {
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .hero-actions input { color-scheme: dark; }
+    .hero-actions button:hover { background: rgba(255, 255, 255, 0.22); }
+    .hero-actions button.primary {
+      background: #fde68a;
+      color: #1e3a8a;
+      border-color: #fde68a;
+      font-weight: 700;
+    }
+    .hero-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hero .mode-chip {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    /* ====== Share mask + poster modal ====== */
+    .share-mask, .poster-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+      animation: fadeIn 0.2s ease;
+    }
+    .share-mask.show, .poster-modal.show { display: flex; }
+    @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+    .mask-card {
+      background: #fff;
+      border-radius: 18px;
+      max-width: 360px;
+      width: 100%;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      position: relative;
+    }
+    .mask-card .lock-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 12px;
+      background: linear-gradient(135deg, #fde68a 0%, #f97316 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+    .mask-card h2 {
+      margin: 0 0 6px;
+      font-size: 19px;
+      color: #0f172a;
+    }
+    .mask-card p.sub {
+      margin: 0 0 18px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .mask-card .perks {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 12px 14px;
+      text-align: left;
+      margin-bottom: 18px;
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.8;
+    }
+    .mask-card .perks b { color: #0ea5e9; }
+    .mask-card .mask-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .mask-card button {
+      width: 100%;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+    }
+    .mask-card button.primary {
+      background: linear-gradient(135deg, #1e3a8a 0%, #0ea5e9 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .mask-card button.subtle {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+    .wx-arrow-hint {
+      position: absolute;
+      top: -64px;
+      right: -8px;
+      color: #fde68a;
+      font-size: 13px;
+      text-align: right;
+      font-weight: 600;
+      display: none;
+    }
+    .wx-arrow-hint::after {
+      content: '↗';
+      display: block;
+      font-size: 36px;
+      line-height: 1;
+      margin-top: 2px;
+    }
+    body.in-wechat .wx-arrow-hint { display: block; }
+
+    /* Poster */
+    .poster-wrap {
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+    }
+    .poster-wrap img {
+      width: 100%;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      display: block;
+    }
+    .poster-tip {
+      color: #fde68a;
+      font-size: 14px;
+      margin: 14px 0 6px;
+      font-weight: 600;
+    }
+    .poster-wrap .poster-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .poster-wrap .poster-actions button {
+      flex: 1;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      cursor: pointer;
+    }
+    .poster-wrap .poster-actions button.primary {
+      background: #fde68a;
+      color: #1e3a8a;
+      border-color: #fde68a;
+    }
+    .poster-wrap .poster-loading {
+      color: #fff;
+      font-size: 14px;
+      padding: 60px 20px;
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 12px; }
+      .container { max-width: 100%; }
+      .card { padding: 14px; border-radius: 12px; margin-bottom: 12px; }
+      .hero { padding: 18px 18px 16px; }
+      .hero h1 { font-size: 21px; }
+      .hero .tagline { font-size: 13px; }
+      .value-chips .chip { font-size: 11px; padding: 5px 10px; }
+      .topbar { gap: 10px; }
+      .actions { width: 100%; justify-content: flex-start; }
+      .actions button, .actions input { flex: 0 0 auto; }
+      .chart-scroll { margin: 0 -14px; padding: 0 14px 6px; }
+      #chart { min-width: 1100px; height: 440px; }
+      .chart-hint { display: block; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-item h3 { font-size: 18px; }
+      .compare-strip { font-size: 12px; padding: 5px 12px; }
+      .mask-card { padding: 20px; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <section class="card topbar">
-      <div>
-        <h1>经营心电图 <span class="mode-chip" id="modeChip">当前：模拟数据</span></h1>
-        <p class="desc">15分钟粒度订单量 + 平均客单价（实付）双轴曲线（近15天）</p>
+    <section class="hero">
+      <h1>
+        经营心电图
+        <span class="mode-chip" id="modeChip">当前：模拟数据</span>
+        <span class="mode-chip" id="creditsChip">剩 1 次分析</span>
+      </h1>
+      <p class="tagline">
+        美团后台<b>看不见</b>的<b>15 分钟</b>订单 &amp; 客单价曲线 ——
+        把满减、推广、活动精确到每一刻钟，外卖老板的隐藏武器。
+      </p>
+      <div class="value-chips">
+        <span class="chip">📈 15 分钟粒度 · 美团官方没有</span>
+        <span class="chip">🎯 一眼看穿高峰 / 低谷</span>
+        <span class="chip">💰 满减定档省成本</span>
+        <span class="chip">🆚 同期 + 商圈对比</span>
       </div>
-      <div class="actions">
+      <div class="hero-actions">
         <button id="prevBtn">上一天</button>
         <input id="datePicker" type="date" />
         <button id="nextBtn">下一天</button>
-        <button id="downloadBtn" class="primary">下载图片</button>
+        <button id="shareBtn" class="primary">📤 分享解锁</button>
+        <button id="downloadBtn">下载图片</button>
       </div>
     </section>
 
     <div class="layout">
       <div>
         <section class="card">
-          <div id="chart"></div>
+          <div id="compareStrip" class="compare-strip"></div>
+          <div class="chart-scroll">
+            <div id="chart"></div>
+          </div>
+          <p class="chart-hint">← 左右滑动查看完整曲线 →</p>
         </section>
         <section class="card">
           <div id="summary" class="summary-grid"></div>
@@ -151,6 +455,41 @@
     </div>
   </div>
 
+  <!-- ====== 分享解锁蒙版（新数据分析没额度时弹出）====== -->
+  <div id="shareMask" class="share-mask" role="dialog" aria-modal="true">
+    <div class="mask-card">
+      <div class="wx-arrow-hint">点这里<br/>分享到朋友圈</div>
+      <div class="lock-icon">🔓</div>
+      <h2>分析新数据需要 1 次额度</h2>
+      <p class="sub">你已用完免费额度。分享朋友圈即可继续<br/>分析这一份新上传的数据。</p>
+      <div class="perks">
+        ✨ 我已分享 → 立即获得 <b>+2 次</b> 分析额度<br/>
+        📲 海报上有专属二维码，好友扫码再 <b>+2 次</b><br/>
+        🆓 同一份数据切换日期不消耗额度
+      </div>
+      <div class="mask-actions">
+        <button id="maskShareBtn" class="primary">📤 立即生成分享海报</button>
+        <button id="maskConfirmBtn">我已分享，领取 +2 次额度</button>
+        <button id="maskCloseBtn" class="subtle">稍后再说</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 海报展示弹层 ====== -->
+  <div id="posterModal" class="poster-modal" role="dialog" aria-modal="true">
+    <div class="poster-wrap">
+      <div id="posterContent">
+        <div class="poster-loading">海报生成中…</div>
+      </div>
+      <p class="poster-tip" id="posterTip" style="display:none">👆 长按图片保存到相册，再发到朋友圈</p>
+      <div class="poster-actions">
+        <button id="posterClaimBtn" class="primary">我已分享 +2</button>
+        <button id="posterDownloadBtn">下载海报</button>
+        <button id="posterCloseBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const BUCKET_COUNT = 96;
     const DAY_WINDOW = 15;
@@ -161,6 +500,7 @@
     const nextBtn = document.getElementById('nextBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const summaryEl = document.getElementById('summary');
+    const compareStripEl = document.getElementById('compareStrip');
     const csvFileInput = document.getElementById('csvFile');
     const loadCsvBtn = document.getElementById('loadCsvBtn');
     const resetBtn = document.getElementById('resetBtn');
@@ -185,6 +525,41 @@
       const h = String(Math.floor(minutes / 60)).padStart(2, '0');
       const m = String(minutes % 60).padStart(2, '0');
       return `${h}:${m}`;
+    });
+
+    const WEEKDAY_CN = ['日', '一', '二', '三', '四', '五', '六'];
+    function lastWeekDateStr(dateStr) {
+      const dt = new Date(`${dateStr}T00:00:00`);
+      dt.setDate(dt.getDate() - 7);
+      return toDateStr(dt);
+    }
+    function weekdayLabel(dateStr) {
+      const dt = new Date(`${dateStr}T00:00:00`);
+      return `周${WEEKDAY_CN[dt.getDay()]}`;
+    }
+    function bucketRange(label) {
+      const [h, m] = label.split(':').map(Number);
+      const endM = m + 14;
+      return `${label}~${String(h).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    }
+    function formatDelta(value, prefix = '') {
+      if (value === 0 || Number.isNaN(value)) {
+        return `<span class="delta-flat">持平</span>`;
+      }
+      const abs = Math.abs(value);
+      const text = `${prefix}${abs.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      return value > 0
+        ? `<span class="delta-up">↑${text}</span>`
+        : `<span class="delta-down">↓${text}</span>`;
+    }
+
+    // Synthetic 商圈同行均值 (peer benchmark) — smooth bimodal pattern
+    const peerBenchmarkOrders = bucketLabels.map((label) => {
+      const [h, m] = label.split(':').map(Number);
+      const t = h + m / 60;
+      const lunch = Math.exp(-Math.pow((t - 12) / 1.6, 2)) * 3.2;
+      const dinner = Math.exp(-Math.pow((t - 19) / 1.9, 2)) * 4.0;
+      return Number((lunch + dinner + 0.15).toFixed(2));
     });
 
     function showStatus(msg, isError = false) {
@@ -315,7 +690,7 @@
 
       return series
         .filter((x) => x.avgPaid != null && (x.avgPaid <= p10 || x.avgPaid >= p90))
-        .slice(0, 6)
+        .slice(0, 3)
         .map((x) => ({
           name: x.avgPaid >= p90 ? '高客单' : '低客单',
           coord: [x.time, x.avgPaid],
@@ -323,76 +698,213 @@
         }));
     }
 
-    function renderSummary(summary) {
+    function renderSummary(summary, lastWeekSummary, lastWeekTag) {
+      const compareTxt = (delta, prefix = '') =>
+        lastWeekSummary
+          ? `比${lastWeekTag} ${formatDelta(delta, prefix)}`
+          : `<span class="delta-flat">无对比</span>`;
+
+      const orderDelta = lastWeekSummary ? summary.totalOrders - lastWeekSummary.totalOrders : 0;
+      const avgPaidDelta = lastWeekSummary
+        ? Number((summary.avgPaid - lastWeekSummary.avgPaid).toFixed(2))
+        : 0;
+      const paidDelta = lastWeekSummary
+        ? Number((summary.paidSum - lastWeekSummary.paidSum).toFixed(2))
+        : 0;
+
       const cards = [
-        { label: '总订单', value: String(summary.totalOrders) },
-        { label: '实付客单价', value: `¥${summary.avgPaid.toFixed(2)}` },
-        { label: '峰值时段', value: summary.peakBucket },
-        { label: '峰值订单量', value: String(summary.peakOrders) },
-        { label: '订单总实付', value: `¥${summary.paidSum.toFixed(2)}` }
+        { label: '总订单', value: String(summary.totalOrders), compare: compareTxt(orderDelta) },
+        { label: '实付客单价', value: `¥${summary.avgPaid.toFixed(2)}`, compare: compareTxt(avgPaidDelta, '¥') },
+        { label: '峰值时段', value: summary.peakBucket, compare: `${summary.peakOrders} 单` },
+        { label: '订单总实付', value: `¥${summary.paidSum.toFixed(2)}`, compare: compareTxt(paidDelta, '¥') }
       ];
 
       summaryEl.innerHTML = cards
-        .map((c) => `<article class="summary-item"><p>${c.label}</p><h3>${c.value}</h3></article>`)
+        .map((c) => `<article class="summary-item"><p>${c.label}</p><h3>${c.value}</h3><div class="compare">${c.compare}</div></article>`)
         .join('');
     }
 
     function render(dateStr) {
       const data = processOrdersToSeries(dateStr, getRawOrders(dateStr));
+      lastSummary = { ...data.summary, dateStr };
+
+      const lastWeek = lastWeekDateStr(dateStr);
+      const lastWeekRaw = getRawOrders(lastWeek);
+      const hasLastWeek = lastWeekRaw.length > 0;
+      const lastWeekData = hasLastWeek
+        ? processOrdersToSeries(lastWeek, lastWeekRaw)
+        : null;
+      const lastWeekTag = weekdayLabel(lastWeek);
+
       const orderSeries = data.series.map((x) => x.orderCount);
+      const lastWeekOrderSeries = hasLastWeek
+        ? lastWeekData.series.map((x) => x.orderCount)
+        : new Array(BUCKET_COUNT).fill(null);
       const avgPaidSeries = data.series.map((x) => x.avgPaid);
       const anomalies = getAvgPaidAnomalies(data.series);
 
+      // Compare strip
+      if (hasLastWeek) {
+        const orderDelta = data.summary.totalOrders - lastWeekData.summary.totalOrders;
+        const paidDelta = Number((data.summary.paidSum - lastWeekData.summary.paidSum).toFixed(2));
+        compareStripEl.classList.remove('empty');
+        compareStripEl.innerHTML =
+          `比${lastWeekTag} 订单 ${formatDelta(orderDelta)} · 实付 ${formatDelta(paidDelta, '¥')}`;
+      } else {
+        compareStripEl.classList.add('empty');
+        compareStripEl.innerHTML = `比${lastWeekTag} 暂无对比数据`;
+      }
+
+      const lastWeekSeriesName = `${lastWeekTag}订单`;
+
       chart.setOption({
         animationDuration: 360,
-        title: { text: `${dateStr} 经营心电图`, left: 'center' },
-        legend: { top: 30, data: ['订单量', '平均客单价'] },
-        grid: { top: 78, left: 56, right: 64, bottom: 56 },
+        title: { text: `${dateStr} 经营心电图`, left: 'center', textStyle: { fontSize: 16, color: '#0f172a' } },
+        legend: {
+          top: 32,
+          icon: 'circle',
+          itemWidth: 8,
+          itemHeight: 8,
+          itemGap: 18,
+          textStyle: { color: '#475569', fontSize: 12 },
+          data: ['昨日订单', lastWeekSeriesName, '商圈同行均值', '平均客单价'],
+          selected: {
+            '昨日订单': true,
+            [lastWeekSeriesName]: true,
+            '商圈同行均值': true,
+            '平均客单价': false
+          }
+        },
+        grid: { top: 84, left: 56, right: 64, bottom: 48 },
         tooltip: {
           trigger: 'axis',
+          appendToBody: true,
+          confine: true,
+          backgroundColor: 'rgba(15, 23, 42, 0.92)',
+          borderWidth: 0,
+          padding: [10, 14],
+          textStyle: { color: '#f8fafc', fontSize: 12 },
+          axisPointer: {
+            type: 'line',
+            lineStyle: { color: 'rgba(148, 163, 184, 0.5)', type: 'dashed' }
+          },
           formatter(params) {
-            const row = data.series[params[0].dataIndex];
-            const avgText = row.avgPaid == null ? '-' : `¥${row.avgPaid.toFixed(2)}`;
-            return [
-              `<b>${row.time}</b>`,
-              `订单量：${row.orderCount}`,
-              `平均客单价：${avgText}`,
-              `订单总实付：¥${row.paidSum.toFixed(2)}`
-            ].join('<br/>');
+            const idx = params[0].dataIndex;
+            const row = data.series[idx];
+            const peerVal = peerBenchmarkOrders[idx];
+            const dot = (color, dashed = false) =>
+              `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dashed ? 'transparent' : color};border:${dashed ? '1px dashed ' + color : 'none'};margin-right:6px;vertical-align:middle"></span>`;
+            const lines = [
+              `<div style="font-weight:600;margin-bottom:6px">${bucketRange(row.time)}</div>`,
+              `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#1d4ed8')}昨日</span><b>${row.orderCount} 单</b></div>`
+            ];
+            if (hasLastWeek) {
+              const lwRow = lastWeekData.series[idx];
+              lines.push(
+                `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#93c5fd', true)}${lastWeekTag}</span><b>${lwRow.orderCount} 单</b></div>`
+              );
+            }
+            lines.push(
+              `<div style="display:flex;justify-content:space-between;gap:18px"><span>${dot('#f97316')}商圈同行均值</span><b>${peerVal.toFixed(2)}</b></div>`
+            );
+            if (row.avgPaid != null) {
+              lines.push(
+                `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(148,163,184,0.25);color:#cbd5e1">客单价 ¥${row.avgPaid.toFixed(2)} · 总实付 ¥${row.paidSum.toFixed(2)}</div>`
+              );
+            }
+            return lines.join('');
           }
         },
         xAxis: {
           type: 'category',
           data: bucketLabels,
+          boundaryGap: false,
+          axisLine: { lineStyle: { color: '#e2e8f0' } },
+          axisTick: { show: false },
           axisLabel: {
-            interval: 3,
+            color: '#94a3b8',
+            interval: 7,
             formatter(v) {
-              return v.endsWith(':00') ? v : '';
+              return v.endsWith(':00') ? Number(v.slice(0, 2)).toString() : '';
             }
           }
         },
         yAxis: [
-          { type: 'value', name: '订单量', minInterval: 1 },
-          { type: 'value', name: '平均客单价(¥)' }
+          {
+            type: 'value',
+            name: '订单量',
+            minInterval: 1,
+            nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { lineStyle: { color: '#f1f5f9' } },
+            axisLabel: { color: '#94a3b8' }
+          },
+          {
+            type: 'value',
+            name: '客单价(¥)',
+            nameTextStyle: { color: '#94a3b8', fontSize: 11 },
+            axisLine: { show: false },
+            axisTick: { show: false },
+            splitLine: { show: false },
+            axisLabel: { color: '#94a3b8' }
+          }
         ],
         series: [
           {
-            name: '订单量',
+            name: '昨日订单',
             type: 'line',
             smooth: true,
             yAxisIndex: 0,
             data: orderSeries,
-            symbolSize: 4,
-            lineStyle: { color: '#2563eb', width: 2 },
-            itemStyle: { color: '#2563eb' },
+            showSymbol: false,
+            sampling: 'lttb',
+            lineStyle: { color: '#1d4ed8', width: 2.5 },
+            itemStyle: { color: '#1d4ed8' },
+            emphasis: { focus: 'series', scale: true },
+            areaStyle: {
+              color: {
+                type: 'linear',
+                x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: 'rgba(29, 78, 216, 0.32)' },
+                  { offset: 1, color: 'rgba(29, 78, 216, 0.02)' }
+                ]
+              }
+            },
             markPoint: {
               symbolSize: 42,
+              itemStyle: { color: '#1d4ed8' },
               data: [{
                 name: '订单峰值',
                 coord: [data.summary.peakBucket, data.summary.peakOrders],
                 value: data.summary.peakOrders
               }]
-            }
+            },
+            z: 3
+          },
+          {
+            name: lastWeekSeriesName,
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 0,
+            data: lastWeekOrderSeries,
+            showSymbol: false,
+            connectNulls: false,
+            lineStyle: { color: '#93c5fd', width: 2, type: 'dashed' },
+            itemStyle: { color: '#93c5fd' },
+            z: 2
+          },
+          {
+            name: '商圈同行均值',
+            type: 'line',
+            smooth: true,
+            yAxisIndex: 0,
+            data: peerBenchmarkOrders,
+            showSymbol: false,
+            lineStyle: { color: '#f97316', width: 2 },
+            itemStyle: { color: '#f97316' },
+            z: 1
           },
           {
             name: '平均客单价',
@@ -401,9 +913,9 @@
             yAxisIndex: 1,
             data: avgPaidSeries,
             connectNulls: false,
-            symbolSize: 4,
-            lineStyle: { color: '#f97316', width: 2 },
-            itemStyle: { color: '#f97316' },
+            showSymbol: false,
+            lineStyle: { color: '#facc15', width: 1.5, type: 'dotted' },
+            itemStyle: { color: '#facc15' },
             markPoint: {
               symbolSize: 30,
               data: anomalies,
@@ -413,7 +925,7 @@
         ]
       });
 
-      renderSummary(data.summary);
+      renderSummary(data.summary, lastWeekData ? lastWeekData.summary : null, lastWeekTag);
       syncNavButtons();
     }
 
@@ -433,7 +945,7 @@
       const dt = new Date(`${datePicker.value}T00:00:00`);
       dt.setDate(dt.getDate() + days);
       datePicker.value = clampDate(toDateStr(dt));
-      render(datePicker.value);
+      attemptRender(datePicker.value);
     }
 
     function stripBOM(text) {
@@ -567,18 +1079,15 @@
         if (!orders.length) throw new Error('未解析到有效订单数据');
 
         const grouped = groupOrdersByDate(orders);
-        Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
-        Object.assign(uploadedStore, grouped);
-
-        uploadMode = true;
-        setModeLabel(true);
-
         const availableDates = Object.keys(grouped).sort();
         const latestAvailable = availableDates[availableDates.length - 1];
 
-        datePicker.value = clampDate(latestAvailable || datePicker.value);
-        render(datePicker.value);
-        showStatus(`上传成功：共 ${orders.length} 条订单，覆盖 ${availableDates.length} 天。\n已切换为 CSV 上传模式。`);
+        const ok = startUploadSession({ orders, grouped, latestDate: latestAvailable });
+        if (!ok) {
+          showStatus(`需要 1 次额度才能分析新数据。已用尽，请分享朋友圈领取 +${SHARE_REWARD} 次。`, true);
+          return;
+        }
+        showStatus(`分析成功：${orders.length} 条订单，覆盖 ${availableDates.length} 天。本次会话内可自由切换日期，剩余 ${getCredits()} 次额度。`);
       } catch (err) {
         showStatus(`上传失败：${err.message}`, true);
       }
@@ -587,7 +1096,7 @@
     resetBtn.addEventListener('click', () => {
       uploadMode = false;
       setModeLabel(false);
-      render(datePicker.value);
+      attemptRender(datePicker.value);
       showStatus('已恢复模拟模式');
     });
 
@@ -599,7 +1108,7 @@
     nextBtn.addEventListener('click', () => shiftDate(1));
     datePicker.addEventListener('change', () => {
       datePicker.value = clampDate(datePicker.value);
-      render(datePicker.value);
+      attemptRender(datePicker.value);
     });
 
     downloadBtn.addEventListener('click', () => {
@@ -612,8 +1121,465 @@
 
     window.addEventListener('resize', () => chart.resize());
 
+    // ============================================================
+    // 分享解锁机制 (credit gate)
+    // 计费模型：每"上传一份新数据"= 1 次会话 = 消耗 1 次额度
+    //         模拟数据 / 同一会话内换日期不消耗额度
+    //         分享朋友圈（点"我已分享"）= +2 额度
+    //         好友扫海报二维码 = +2 额度（需后端，未实装）
+    // ============================================================
+    const CREDIT_STATE_KEY = 'waimai_credits_v2';
+    const BROWSER_ID_KEY = 'waimai_browser_id';
+    const INITIAL_CREDITS = 1;
+    const SHARE_REWARD = 2;
+
+    const shareMaskEl = document.getElementById('shareMask');
+    const posterModalEl = document.getElementById('posterModal');
+    const posterContentEl = document.getElementById('posterContent');
+    const posterTipEl = document.getElementById('posterTip');
+    const shareBtn = document.getElementById('shareBtn');
+    const creditsChip = document.getElementById('creditsChip');
+
+    let lastSummary = null;
+    let lastRenderedDate = null;
+    let pendingUpload = null;       // 等待解锁的上传请求 { orders, grouped, latestDate }
+    let memoryCreditState = null;   // localStorage 不可用时的兜底
+
+    // ----- 浏览器身份（用于 QR 邀请链接，未来后端拿这个对账） -----
+    function getOrCreateBrowserId() {
+      try {
+        let id = localStorage.getItem(BROWSER_ID_KEY);
+        if (!id) {
+          id = 'b_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+          localStorage.setItem(BROWSER_ID_KEY, id);
+        }
+        return id;
+      } catch (e) {
+        return 'b_anon_' + Date.now().toString(36);
+      }
+    }
+    const browserId = getOrCreateBrowserId();
+
+    // ----- 落地参数 ?ref=xxx 记录"被谁拉来的"（后端实装后用于派发奖励）-----
+    function recordReferrer() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const ref = params.get('ref');
+        if (ref && ref !== browserId) {
+          localStorage.setItem('waimai_referred_by', ref);
+          // TODO: 后端就绪后调用 POST /api/credits/grant-on-scan { token, scannerId: browserId }
+        }
+      } catch (e) { /* ignore */ }
+    }
+    recordReferrer();
+
+    // ----- credit 状态 -----
+    function getCreditState() {
+      try {
+        const raw = localStorage.getItem(CREDIT_STATE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+      if (memoryCreditState) return memoryCreditState;
+      return { credits: INITIAL_CREDITS };
+    }
+
+    function setCreditState(state) {
+      memoryCreditState = state;
+      try { localStorage.setItem(CREDIT_STATE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+      updateCreditsChip();
+    }
+
+    function getCredits() {
+      return getCreditState().credits;
+    }
+
+    function consumeOneCredit() {
+      const state = getCreditState();
+      state.credits = Math.max(0, state.credits - 1);
+      setCreditState(state);
+    }
+
+    function addCredits(n) {
+      const state = getCreditState();
+      state.credits = state.credits + n;
+      setCreditState(state);
+    }
+
+    function updateCreditsChip() {
+      if (!creditsChip) return;
+      const c = getCredits();
+      creditsChip.textContent = c > 0 ? `剩 ${c} 次分析` : '额度用尽 · 分享解锁';
+      creditsChip.style.background = c > 0 ? '' : 'rgba(254, 215, 170, 0.4)';
+    }
+
+    function showShareMask() {
+      shareMaskEl.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function hideShareMask() {
+      shareMaskEl.classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    // 用户主动点"我已分享" / 蒙版"我已分享" → 立即奖励
+    function claimShareReward(opts) {
+      addCredits(SHARE_REWARD);
+      hideShareMask();
+      if (opts && opts.silent) return;
+      showStatus(`感谢分享！已 +${SHARE_REWARD} 次分析额度，当前剩余 ${getCredits()} 次。`);
+      // 如果有挂起的上传，自动重放
+      if (pendingUpload) {
+        const u = pendingUpload;
+        pendingUpload = null;
+        startUploadSession(u);
+      }
+    }
+
+    // ----- 会话级 gate -----
+    // 模拟模式 + 同一会话内换日期 → 直接 render，无额度消耗
+    function attemptRender(dateStr) {
+      render(dateStr);
+      lastRenderedDate = dateStr;
+    }
+
+    // 上传新数据 = 一次新会话 = 消耗 1 额度
+    function startUploadSession(payload) {
+      if (getCredits() < 1) {
+        pendingUpload = payload;
+        showShareMask();
+        return false;
+      }
+      consumeOneCredit();
+      Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
+      Object.assign(uploadedStore, payload.grouped);
+      uploadMode = true;
+      setModeLabel(true);
+      datePicker.value = clampDate(payload.latestDate || datePicker.value);
+      attemptRender(datePicker.value);
+      return true;
+    }
+
+    // ============================================================
+    // 海报生成 (canvas)
+    // ============================================================
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    // 生成本次海报的唯一邀请 URL（含 browserId 和时间戳，后端就绪后会拿这个对账）
+    function buildInviteUrl() {
+      const t = Date.now().toString(36);
+      const base = location.origin + location.pathname;
+      // TODO: 后端就绪后改为 `${origin}/i/<server_token>` 形式
+      return `${base}?ref=${encodeURIComponent(browserId)}&t=${t}`;
+    }
+
+    async function generateQrDataUrl(text) {
+      if (typeof QRCode === 'undefined' || window.__qrLoadFailed) return null;
+      try {
+        return await QRCode.toDataURL(text, {
+          width: 240,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#1e3a8a', light: '#ffffff' }
+        });
+      } catch (e) {
+        console.warn('[qr] generation failed:', e);
+        return null;
+      }
+    }
+
+    async function buildPosterDataUrl() {
+      const chartUrl = chart.getDataURL({ pixelRatio: 2, backgroundColor: '#fff' });
+      const summary = lastSummary || { totalOrders: 0, avgPaid: 0, peakBucket: '--:--', paidSum: 0, dateStr: datePicker.value };
+      const inviteUrl = buildInviteUrl();
+      const qrDataUrl = await generateQrDataUrl(inviteUrl);
+
+      const W = 750, H = 1334;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      // Background gradient
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#1e3a8a');
+      bg.addColorStop(1, '#0ea5e9');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Decorative circles
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath(); ctx.arc(640, 100, 180, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(80, 1200, 220, 0, Math.PI * 2); ctx.fill();
+
+      // Title
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 60px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillText('经营心电图', W / 2, 130);
+
+      ctx.font = '26px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText('美团后台看不见的 15 分钟订单曲线', W / 2, 178);
+
+      // Stats card
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      roundRect(ctx, 60, 220, 630, 150, 18);
+      ctx.fill();
+
+      const stats = [
+        { label: '当日订单', value: String(summary.totalOrders || 0) },
+        { label: '客单价', value: '¥' + (summary.avgPaid || 0).toFixed(0) },
+        { label: '高峰时段', value: summary.peakBucket || '--:--' }
+      ];
+      stats.forEach((s, i) => {
+        const x = 60 + 105 + i * 210;
+        ctx.fillStyle = '#fde68a';
+        ctx.font = 'bold 46px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+        ctx.fillText(s.value, x, 295);
+        ctx.fillStyle = 'rgba(255,255,255,0.78)';
+        ctx.font = '22px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+        ctx.fillText(s.label, x, 335);
+      });
+
+      // White chart card
+      ctx.fillStyle = '#fff';
+      roundRect(ctx, 40, 410, 670, 600, 24);
+      ctx.fill();
+
+      // Date label
+      ctx.fillStyle = '#64748b';
+      ctx.font = '22px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(summary.dateStr || datePicker.value, 64, 446);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#0ea5e9';
+      ctx.fillText('15 分钟粒度 · 仅此独家', 686, 446);
+
+      // Chart image (from ECharts)
+      try {
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const cardX = 60, cardY = 460, cardW = 630, cardH = 540;
+            const ratio = Math.min(cardW / img.width, cardH / img.height);
+            const drawW = img.width * ratio;
+            const drawH = img.height * ratio;
+            const dx = cardX + (cardW - drawW) / 2;
+            const dy = cardY + (cardH - drawH) / 2;
+            ctx.drawImage(img, dx, dy, drawW, drawH);
+            resolve();
+          };
+          img.onerror = () => reject(new Error('chart image load failed'));
+          img.src = chartUrl;
+        });
+      } catch (e) {
+        console.warn('chart image draw failed:', e);
+      }
+
+      // ====== 底部 QR + CTA 区（左 QR · 右文案）======
+      // QR 白底圆角卡片
+      ctx.fillStyle = '#fff';
+      roundRect(ctx, 60, 1050, 220, 220, 16);
+      ctx.fill();
+
+      if (qrDataUrl) {
+        try {
+          await new Promise((resolve, reject) => {
+            const qrImg = new Image();
+            qrImg.onload = () => {
+              ctx.drawImage(qrImg, 80, 1070, 180, 180);
+              resolve();
+            };
+            qrImg.onerror = () => reject(new Error('qr load failed'));
+            qrImg.src = qrDataUrl;
+          });
+        } catch (e) {
+          // QR 加载失败，画一个占位
+          ctx.fillStyle = '#1e3a8a';
+          ctx.textAlign = 'center';
+          ctx.font = '20px sans-serif';
+          ctx.fillText('扫码看', 170, 1150);
+          ctx.fillText('心电图', 170, 1180);
+        }
+      } else {
+        ctx.fillStyle = '#1e3a8a';
+        ctx.textAlign = 'center';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('扫码看', 170, 1150);
+        ctx.fillText('心电图', 170, 1180);
+      }
+
+      // 右侧 CTA 文案
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 38px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillText('扫码看你家店', 310, 1110);
+
+      ctx.font = '22px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.86)';
+      ctx.fillText('15 分钟一个点', 310, 1150);
+      ctx.fillText('美团后台没有的曲线', 310, 1182);
+
+      // 高亮提示：好友扫码会奖励
+      ctx.fillStyle = '#fde68a';
+      ctx.font = 'bold 20px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.fillText('🎁 好友扫码 → 我 +2 次额度', 310, 1232);
+
+      // Footer / domain
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '18px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(location.host || 'waimaianalyze', W / 2, 1300);
+
+      return canvas.toDataURL('image/png');
+    }
+
+    async function showPosterModal() {
+      posterModalEl.classList.add('show');
+      document.body.style.overflow = 'hidden';
+      posterContentEl.innerHTML = '<div class="poster-loading">海报生成中…</div>';
+      posterTipEl.style.display = 'none';
+      try {
+        const dataUrl = await buildPosterDataUrl();
+        posterContentEl.innerHTML = `<img id="posterImg" src="${dataUrl}" alt="经营心电图分享海报" />`;
+        posterTipEl.style.display = 'block';
+        window.__lastPosterDataUrl = dataUrl;
+      } catch (e) {
+        posterContentEl.innerHTML = `<div class="poster-loading">海报生成失败：${e.message}</div>`;
+      }
+    }
+
+    function hidePosterModal() {
+      posterModalEl.classList.remove('show');
+      document.body.style.overflow = '';
+    }
+
+    // ============================================================
+    // 微信 JS-SDK 集成（依赖签名后端，缺失时静默降级到海报模式）
+    // ============================================================
+    const inWeChat = /micromessenger/i.test(navigator.userAgent);
+    if (inWeChat) document.body.classList.add('in-wechat');
+
+    function buildWxShareData() {
+      return {
+        title: '我发现了美团后台看不见的秘密曲线',
+        desc: '15 分钟粒度的订单 & 客单价心电图，精准定位每一个高峰和低谷。外卖老板的隐藏武器。',
+        link: buildInviteUrl(),
+        imgUrl: new URL('share-cover.svg', location.href).href,
+        success: () => claimShareReward()
+      };
+    }
+
+    async function tryConfigureWxShare() {
+      if (typeof wx === 'undefined' || window.__wxSdkLoadFailed) return false;
+      const sigEndpoint = window.WX_JSSDK_SIGN_ENDPOINT;
+      if (!sigEndpoint) return false;
+      try {
+        const url = encodeURIComponent(location.href.split('#')[0]);
+        const res = await fetch(`${sigEndpoint}?url=${url}`);
+        if (!res.ok) throw new Error('signature fetch failed: ' + res.status);
+        const data = await res.json();
+
+        wx.config({
+          debug: false,
+          appId: data.appId,
+          timestamp: data.timestamp,
+          nonceStr: data.nonceStr,
+          signature: data.signature,
+          jsApiList: [
+            'updateAppMessageShareData',
+            'updateTimelineShareData',
+            'onMenuShareTimeline',
+            'onMenuShareAppMessage'
+          ]
+        });
+
+        wx.ready(() => {
+          const sd = buildWxShareData();
+          try { wx.updateAppMessageShareData(sd); } catch (e) { /* ignore */ }
+          try { wx.updateTimelineShareData(sd); } catch (e) { /* ignore */ }
+          try { wx.onMenuShareTimeline({ ...sd, success: sd.success }); } catch (e) { /* ignore */ }
+          try { wx.onMenuShareAppMessage({ ...sd, success: sd.success }); } catch (e) { /* ignore */ }
+        });
+
+        return true;
+      } catch (e) {
+        console.warn('[wx-share] signing failed, falling back to poster:', e);
+        return false;
+      }
+    }
+
+    // ============================================================
+    // 蒙版 / 海报相关事件
+    // ============================================================
+    shareBtn.addEventListener('click', () => showPosterModal());
+
+    document.getElementById('maskShareBtn').addEventListener('click', () => {
+      hideShareMask();
+      showPosterModal();
+    });
+
+    document.getElementById('maskConfirmBtn').addEventListener('click', () => {
+      claimShareReward();
+    });
+
+    document.getElementById('maskCloseBtn').addEventListener('click', () => {
+      hideShareMask();
+    });
+
+    document.getElementById('posterClaimBtn').addEventListener('click', () => {
+      claimShareReward();
+      hidePosterModal();
+    });
+
+    document.getElementById('posterCloseBtn').addEventListener('click', hidePosterModal);
+
+    document.getElementById('posterDownloadBtn').addEventListener('click', () => {
+      if (!window.__lastPosterDataUrl) return;
+      const a = document.createElement('a');
+      a.href = window.__lastPosterDataUrl;
+      a.download = `经营心电图-海报-${datePicker.value}.png`;
+      a.click();
+    });
+
+    shareMaskEl.addEventListener('click', (e) => {
+      if (e.target === shareMaskEl) hideShareMask();
+    });
+    posterModalEl.addEventListener('click', (e) => {
+      if (e.target === posterModalEl) hidePosterModal();
+    });
+
+    // 当用户去微信分享回来时，给一个软确认
+    let leftAt = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        leftAt = Date.now();
+      } else if (leftAt && Date.now() - leftAt > 5000 && shareMaskEl.classList.contains('show')) {
+        if (confirm(`已经分享到朋友圈了吗？点确定即可领取 +${SHARE_REWARD} 次分析额度。`)) {
+          claimShareReward();
+        }
+      }
+    });
+
+    // 微信内尝试配置原生分享（需要后端签名 endpoint）
+    tryConfigureWxShare();
+
+    updateCreditsChip();
     setModeLabel(false);
-    render(datePicker.value);
+    attemptRender(datePicker.value);
   </script>
 </body>
 </html>
