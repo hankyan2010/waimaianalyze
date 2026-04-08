@@ -1082,7 +1082,7 @@
         const availableDates = Object.keys(grouped).sort();
         const latestAvailable = availableDates[availableDates.length - 1];
 
-        const ok = startUploadSession({ orders, grouped, latestDate: latestAvailable });
+        const ok = await startUploadSession({ orders, grouped, latestDate: latestAvailable });
         if (!ok) {
           showStatus(`需要 1 次额度才能分析新数据。已用尽，请分享朋友圈领取 +${SHARE_REWARD} 次。`, true);
           return;
@@ -1122,16 +1122,19 @@
     window.addEventListener('resize', () => chart.resize());
 
     // ============================================================
-    // 分享解锁机制 (credit gate)
+    // 分享解锁机制 (credit gate) — 后端托管版
     // 计费模型：每"上传一份新数据"= 1 次会话 = 消耗 1 次额度
     //         模拟数据 / 同一会话内换日期不消耗额度
-    //         分享朋友圈（点"我已分享"）= +2 额度
-    //         好友扫海报二维码 = +2 额度（需后端，未实装）
+    //         分享朋友圈（点"我已分享"）= 后端 +2 额度（带限流）
+    //         好友扫海报二维码 = 后端给邀请人 +2 额度
+    // 启动顺序：先 sync 再 render。离线 / 后端挂掉时自动降级到 localStorage cache。
     // ============================================================
     const CREDIT_STATE_KEY = 'waimai_credits_v2';
     const BROWSER_ID_KEY = 'waimai_browser_id';
     const INITIAL_CREDITS = 1;
     const SHARE_REWARD = 2;
+    // 同源同子路径 → ./api 指向 /waimaianalyze/api （Apache mod_proxy 反代到 Node:3000）
+    const API_BASE = location.pathname.replace(/[^/]*$/, '') + 'api';
 
     const shareMaskEl = document.getElementById('shareMask');
     const posterModalEl = document.getElementById('posterModal');
@@ -1143,9 +1146,8 @@
     let lastSummary = null;
     let lastRenderedDate = null;
     let pendingUpload = null;       // 等待解锁的上传请求 { orders, grouped, latestDate }
-    let memoryCreditState = null;   // localStorage 不可用时的兜底
 
-    // ----- 浏览器身份（用于 QR 邀请链接，未来后端拿这个对账） -----
+    // ----- 浏览器身份（用于 QR 邀请链接 + 后端对账） -----
     function getOrCreateBrowserId() {
       try {
         let id = localStorage.getItem(BROWSER_ID_KEY);
@@ -1155,61 +1157,87 @@
         }
         return id;
       } catch (e) {
-        return 'b_anon_' + Date.now().toString(36);
+        return 'b_anon' + Date.now().toString(36);
       }
     }
     const browserId = getOrCreateBrowserId();
 
-    // ----- 落地参数 ?ref=xxx 记录"被谁拉来的"（后端实装后用于派发奖励）-----
-    function recordReferrer() {
-      try {
-        const params = new URLSearchParams(location.search);
-        const ref = params.get('ref');
-        if (ref && ref !== browserId) {
-          localStorage.setItem('waimai_referred_by', ref);
-          // TODO: 后端就绪后调用 POST /api/credits/grant-on-scan { token, scannerId: browserId }
-        }
-      } catch (e) { /* ignore */ }
-    }
-    recordReferrer();
+    // ----- credit 状态（内存为准，localStorage 作为离线 cache）-----
+    let _cachedCredits = INITIAL_CREDITS;
 
-    // ----- credit 状态 -----
-    function getCreditState() {
+    function readCachedCredits() {
       try {
         const raw = localStorage.getItem(CREDIT_STATE_KEY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed.credits === 'number') return parsed.credits;
+        }
       } catch (e) { /* ignore */ }
-      if (memoryCreditState) return memoryCreditState;
-      return { credits: INITIAL_CREDITS };
+      return INITIAL_CREDITS;
     }
 
-    function setCreditState(state) {
-      memoryCreditState = state;
-      try { localStorage.setItem(CREDIT_STATE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    function writeCachedCredits(credits) {
+      _cachedCredits = credits;
+      try { localStorage.setItem(CREDIT_STATE_KEY, JSON.stringify({ credits })); } catch (e) { /* ignore */ }
       updateCreditsChip();
     }
 
-    function getCredits() {
-      return getCreditState().credits;
-    }
-
-    function consumeOneCredit() {
-      const state = getCreditState();
-      state.credits = Math.max(0, state.credits - 1);
-      setCreditState(state);
-    }
-
-    function addCredits(n) {
-      const state = getCreditState();
-      state.credits = state.credits + n;
-      setCreditState(state);
-    }
+    function getCredits() { return _cachedCredits; }
 
     function updateCreditsChip() {
       if (!creditsChip) return;
-      const c = getCredits();
+      const c = _cachedCredits;
       creditsChip.textContent = c > 0 ? `剩 ${c} 次分析` : '额度用尽 · 分享解锁';
       creditsChip.style.background = c > 0 ? '' : 'rgba(254, 215, 170, 0.4)';
+    }
+
+    // ----- 后端 API 封装 -----
+    async function apiCall(method, path, body) {
+      const init = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      };
+      if (body) init.body = JSON.stringify(body);
+      const resp = await fetch(`${API_BASE}${path}`, init);
+      let data = {};
+      try { data = await resp.json(); } catch (e) { /* ignore */ }
+      return { status: resp.status, data };
+    }
+
+    async function syncCreditsFromBackend() {
+      try {
+        const { status, data } = await apiCall('GET', `/credits?browser_id=${encodeURIComponent(browserId)}`);
+        if (status === 200 && typeof data.credits === 'number') {
+          writeCachedCredits(data.credits);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[credits] sync failed, using local cache:', e);
+      }
+      _cachedCredits = readCachedCredits();
+      updateCreditsChip();
+      return false;
+    }
+
+    // ----- 落地参数 ?ref=xxx → 后端给邀请人补发 -----
+    async function recordReferrer() {
+      let ref;
+      try {
+        const params = new URLSearchParams(location.search);
+        ref = params.get('ref');
+        if (!ref || ref === browserId) return;
+        try { localStorage.setItem('waimai_referred_by', ref); } catch (e) { /* ignore */ }
+        if (!/^b_[a-z0-9]{4,40}$/i.test(ref)) return;
+      } catch (e) { return; }
+      try {
+        await apiCall('POST', '/credits/grant-on-scan', {
+          scanner_id: browserId,
+          referrer_id: ref,
+        });
+      } catch (e) {
+        console.warn('[credits] grant-on-scan failed:', e);
+      }
     }
 
     function showShareMask() {
@@ -1222,17 +1250,45 @@
       document.body.style.overflow = '';
     }
 
-    // 用户主动点"我已分享" / 蒙版"我已分享" → 立即奖励
-    function claimShareReward(opts) {
-      addCredits(SHARE_REWARD);
-      hideShareMask();
-      if (opts && opts.silent) return;
-      showStatus(`感谢分享！已 +${SHARE_REWARD} 次分析额度，当前剩余 ${getCredits()} 次。`);
-      // 如果有挂起的上传，自动重放
-      if (pendingUpload) {
-        const u = pendingUpload;
-        pendingUpload = null;
-        startUploadSession(u);
+    // 用户主动点"我已分享" / 蒙版"我已分享" → 后端校验并 +2
+    async function claimShareReward(opts) {
+      const silent = opts && opts.silent;
+      try {
+        const { status, data } = await apiCall('POST', '/credits/claim-share', { browser_id: browserId });
+        if (status === 200 && data.ok) {
+          writeCachedCredits(data.credits);
+          hideShareMask();
+          if (!silent) {
+            showStatus(`感谢分享！已 +${data.granted} 次分析额度，当前剩余 ${data.credits} 次。`);
+          }
+          if (pendingUpload) {
+            const u = pendingUpload;
+            pendingUpload = null;
+            startUploadSession(u);
+          }
+          return;
+        }
+        if (status === 429) {
+          const reason = data.reason === 'daily_limit'
+            ? '今日分享奖励已满，明天再来'
+            : '刚刚已领过，10 分钟后再试';
+          if (!silent) showStatus(`暂不能领取：${reason}`, true);
+          return;
+        }
+        if (!silent) showStatus(`领取失败 (${status})，请稍后再试`, true);
+      } catch (e) {
+        // 网络兜底：本地暂记一次，等下次 sync 让后端决定最终值
+        console.warn('[credits] claim fallback to local:', e);
+        writeCachedCredits(_cachedCredits + SHARE_REWARD);
+        hideShareMask();
+        if (!silent) {
+          showStatus(`网络异常，已本地暂记 +${SHARE_REWARD} 次，上线后同步。`);
+        }
+        if (pendingUpload) {
+          const u = pendingUpload;
+          pendingUpload = null;
+          startUploadSession(u);
+        }
       }
     }
 
@@ -1243,14 +1299,32 @@
       lastRenderedDate = dateStr;
     }
 
-    // 上传新数据 = 一次新会话 = 消耗 1 额度
-    function startUploadSession(payload) {
-      if (getCredits() < 1) {
-        pendingUpload = payload;
-        showShareMask();
-        return false;
+    // 上传新数据 = 一次新会话 = 后端扣 1 次额度
+    async function startUploadSession(payload) {
+      try {
+        const { status, data } = await apiCall('POST', '/credits/consume', { browser_id: browserId });
+        if (status === 402 || (typeof data === 'object' && data.ok === false)) {
+          if (typeof data.credits === 'number') writeCachedCredits(data.credits);
+          pendingUpload = payload;
+          showShareMask();
+          return false;
+        }
+        if (status !== 200 || !data.ok) {
+          showStatus(`扣减额度失败 (${status})，请稍后再试`, true);
+          return false;
+        }
+        writeCachedCredits(data.credits);
+      } catch (e) {
+        // 网络兜底：回落到本地判断
+        console.warn('[credits] consume fallback to local:', e);
+        if (_cachedCredits < 1) {
+          pendingUpload = payload;
+          showShareMask();
+          return false;
+        }
+        writeCachedCredits(_cachedCredits - 1);
       }
-      consumeOneCredit();
+
       Object.keys(uploadedStore).forEach((k) => delete uploadedStore[k]);
       Object.assign(uploadedStore, payload.grouped);
       uploadMode = true;
@@ -1577,9 +1651,19 @@
     // 微信内尝试配置原生分享（需要后端签名 endpoint）
     tryConfigureWxShare();
 
+    // ====== 启动：先 sync 后端额度，再 render ======
+    // 先立即用本地 cache 画一次，避免启动空白；拿到真实额度后再刷新 chip。
+    _cachedCredits = readCachedCredits();
     updateCreditsChip();
     setModeLabel(false);
     attemptRender(datePicker.value);
+
+    (async () => {
+      // 带 ?ref= 落地 → 先给邀请人补发（scanner 是新用户时）
+      await recordReferrer();
+      // 再拉自己的真实余额；失败则保持 cache，不打断用户
+      await syncCreditsFromBackend();
+    })();
   </script>
 </body>
 </html>

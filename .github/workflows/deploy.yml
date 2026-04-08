@@ -3,7 +3,10 @@ name: Deploy to Huawei ECS
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "claude/deploy-huawei-cloud-7sNvM"]
+    branches:
+      - main
+      - claude/deploy-huawei-cloud-7sNvM
+      - claude/review-previous-progress-Gvo7a
 
 jobs:
   deploy:
@@ -12,25 +15,141 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy index.html to ECS
+      # ---------- 后端依赖（在 CI 侧装，避免 ECS 上跑 npm） ----------
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps (prod only, linux-x64)
+        working-directory: backend
+        run: |
+          npm ci --omit=dev
+          # 打包一份 tar 方便一次性 scp
+          tar czf ../backend-bundle.tar.gz server.js package.json package-lock.json node_modules
+          ls -lh ../backend-bundle.tar.gz
+
+      # ---------- 写私钥 ----------
+      - name: Prepare SSH key
         env:
           SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
         run: |
-          # 写入私钥
-          echo "$SSH_KEY" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.ECS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # 上传 index.html 到 Apache 目录
-          scp -i /tmp/deploy_key \
+      # ---------- 前端：静态文件到 Apache DocumentRoot ----------
+      - name: Deploy static frontend
+        env:
+          ECS_USER: ${{ secrets.ECS_USERNAME }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            index.html \
-            ${{ secrets.ECS_USERNAME }}@${{ secrets.ECS_HOST }}:/var/www/html/waimaianalyze/index.html
+            index.html share-cover.svg \
+            ${ECS_USER}@${ECS_HOST}:/tmp/
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${ECS_USER}@${ECS_HOST} '
+              sudo mkdir -p /var/www/html/waimaianalyze &&
+              sudo mv /tmp/index.html /tmp/share-cover.svg /var/www/html/waimaianalyze/ &&
+              sudo chown -R apache:apache /var/www/html/waimaianalyze 2>/dev/null || sudo chown -R www-data:www-data /var/www/html/waimaianalyze 2>/dev/null || true
+            '
 
-          rm -f /tmp/deploy_key
-          echo "✅ 部署完成：http://waimaiketang.com/waimaianalyze/"
+      # ---------- 后端：server.js + node_modules → /opt/waimaianalyze ----------
+      - name: Deploy backend bundle
+        env:
+          ECS_USER: ${{ secrets.ECS_USERNAME }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            backend-bundle.tar.gz \
+            deploy/systemd/waimaianalyze.service \
+            deploy/apache/waimaianalyze.conf \
+            ${ECS_USER}@${ECS_HOST}:/tmp/
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${ECS_USER}@${ECS_HOST} 'bash -s' << 'REMOTE'
+          set -euo pipefail
+
+          # 1) 创建 waimai 用户（如果没有）
+          if ! id waimai >/dev/null 2>&1; then
+            sudo useradd --system --shell /usr/sbin/nologin --home /opt/waimaianalyze waimai
+          fi
+
+          # 2) 准备目录
+          sudo mkdir -p /opt/waimaianalyze
+          sudo chown waimai:waimai /opt/waimaianalyze
+
+          # 3) 解包后端 bundle (原子替换 node_modules / server.js)
+          sudo tar xzf /tmp/backend-bundle.tar.gz -C /opt/waimaianalyze
+          sudo chown -R waimai:waimai /opt/waimaianalyze
+          rm -f /tmp/backend-bundle.tar.gz
+
+          # 4) 安装 systemd unit (幂等)
+          if ! diff -q /tmp/waimaianalyze.service /etc/systemd/system/waimaianalyze.service >/dev/null 2>&1; then
+            sudo mv /tmp/waimaianalyze.service /etc/systemd/system/waimaianalyze.service
+            sudo systemctl daemon-reload
+          else
+            rm -f /tmp/waimaianalyze.service
+          fi
+          sudo systemctl enable waimaianalyze 2>/dev/null || true
+
+          # 5) 安装 Apache 反代片段 (幂等) + reload
+          APACHE_CONF_DIR=""
+          if [ -d /etc/httpd/conf.d ]; then
+            APACHE_CONF_DIR=/etc/httpd/conf.d
+            APACHE_SERVICE=httpd
+          elif [ -d /etc/apache2/conf-enabled ]; then
+            APACHE_CONF_DIR=/etc/apache2/conf-enabled
+            APACHE_SERVICE=apache2
+          fi
+          if [ -n "$APACHE_CONF_DIR" ]; then
+            if ! diff -q /tmp/waimaianalyze.conf ${APACHE_CONF_DIR}/waimaianalyze.conf >/dev/null 2>&1; then
+              sudo mv /tmp/waimaianalyze.conf ${APACHE_CONF_DIR}/waimaianalyze.conf
+              sudo systemctl reload ${APACHE_SERVICE}
+            else
+              rm -f /tmp/waimaianalyze.conf
+            fi
+          else
+            echo "⚠️  Apache conf dir not found — 跳过反代配置，你需要手动贴 waimaianalyze.conf"
+            rm -f /tmp/waimaianalyze.conf
+          fi
+
+          # 6) 重启后端
+          sudo systemctl restart waimaianalyze
+          sleep 1
+          sudo systemctl is-active waimaianalyze
+          REMOTE
+
+      # ---------- 健康检查 ----------
+      - name: Health check
+        env:
+          ECS_USER: ${{ secrets.ECS_USERNAME }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${ECS_USER}@${ECS_HOST} '
+              curl -fsS http://127.0.0.1:3000/api/health && echo " ✓ node direct" &&
+              curl -fsS http://127.0.0.1/waimaianalyze/api/health && echo " ✓ apache proxy"
+            '
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
 
       - name: Summary
         run: |
           echo "### ✅ 部署完成" >> $GITHUB_STEP_SUMMARY
-          echo "访问地址：http://waimaiketang.com/waimaianalyze/" >> $GITHUB_STEP_SUMMARY
+          echo "- 前端: http://waimaiketang.com/waimaianalyze/" >> $GITHUB_STEP_SUMMARY
+          echo "- 后端: http://waimaiketang.com/waimaianalyze/api/health" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,29 @@
+[Unit]
+Description=waimaianalyze credits API (Node + SQLite)
+Documentation=https://github.com/hankyan2010/waimaianalyze
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 跑在非 root 用户下；如果你的 ECS 上这个用户不存在，改成 apache / nobody / 你自己的部署用户
+User=waimai
+Group=waimai
+WorkingDirectory=/opt/waimaianalyze
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DB_PATH=/opt/waimaianalyze/waimai.db
+ExecStart=/usr/bin/node /opt/waimaianalyze/server.js
+Restart=on-failure
+RestartSec=3
+# 只让它看到自己那一坨
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=waimaianalyze
+
+[Install]
+WantedBy=multi-user.target

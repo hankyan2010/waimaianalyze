@@ -1,0 +1,16 @@
+{
+  "name": "waimaianalyze-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Credits / share-reward API for 经营心电图",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}
