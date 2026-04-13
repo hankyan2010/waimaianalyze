@@ -333,130 +333,83 @@
       letter-spacing: 0.02em;
     }
     .entry-shell {
+      max-width: 880px;
+      margin: 0 auto;
       display: grid;
       gap: 14px;
     }
-    .entry-hero {
+    .entry-minimal {
       display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
-      gap: 14px;
-      align-items: stretch;
+      gap: 16px;
+      padding: 22px;
     }
-    .entry-title {
+    .entry-heading {
       display: grid;
-      gap: 10px;
-      align-content: start;
+      gap: 6px;
+      text-align: center;
+      justify-items: center;
     }
-    .entry-title h1 {
+    .entry-heading h1 {
       font-size: 34px;
       line-height: 1.15;
     }
-    .entry-subtitle {
-      font-size: 15px;
+    .entry-heading p {
+      margin: 0;
       color: var(--muted);
-      max-width: 620px;
+      font-size: 14px;
     }
-    .entry-grid {
+    .entry-buttons {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: 1fr 1fr;
       gap: 14px;
     }
-    .entry-card {
+    .entry-button {
       display: grid;
       gap: 12px;
       align-content: start;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fff;
     }
-    .entry-card h3 {
-      font-size: 20px;
+    .entry-button-title {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.2;
     }
-    .entry-card p {
-      margin: 0;
+    .entry-button-sub {
       color: var(--muted);
       font-size: 13px;
     }
-    .entry-badge {
-      display: inline-flex;
-      align-items: center;
-      width: fit-content;
-      min-height: 26px;
-      padding: 0 10px;
-      border-radius: 999px;
-      background: #fff7d1;
-      color: #7c5e00;
-      border: 1px solid #ffe58a;
-      font-size: 11px;
-      font-weight: 700;
+    .entry-cta {
+      min-height: 52px;
+      justify-content: center;
+      font-size: 16px;
     }
     .entry-actions {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
       gap: 8px;
-      align-items: center;
+    }
+    .entry-file {
+      width: 100%;
+    }
+    .entry-note {
+      display: grid;
+      gap: 8px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid #ffe5a3;
+      background: #fffaf0;
+      color: #6d5a17;
+      font-size: 12px;
+    }
+    .entry-note strong {
+      color: #4a3a00;
+      font-size: 13px;
     }
     .ghost-btn {
       background: #fff;
       color: var(--text);
-    }
-    .guide-steps {
-      display: grid;
-      gap: 10px;
-    }
-    .guide-step {
-      display: grid;
-      grid-template-columns: 28px minmax(0, 1fr);
-      gap: 10px;
-      align-items: start;
-    }
-    .guide-step span {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      background: var(--primary);
-      color: #443400;
-      font-size: 12px;
-      font-weight: 700;
-    }
-    .guide-board {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background: linear-gradient(180deg, #fffef7, #ffffff);
-      padding: 12px;
-    }
-    .guide-board svg {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-    .guide-tip {
-      padding: 10px 12px;
-      border: 1px dashed #ffd979;
-      border-radius: 12px;
-      background: #fff9e6;
-      color: #6d5a17;
-      font-size: 12px;
-    }
-    .entry-side-card {
-      display: grid;
-      gap: 10px;
-      align-content: start;
-      background: linear-gradient(180deg, rgba(255, 209, 0, 0.12), rgba(255, 255, 255, 0) 70%), var(--panel);
-    }
-    .entry-side-list {
-      display: grid;
-      gap: 8px;
-    }
-    .entry-side-item {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: #fffdf7;
-      border: 1px solid var(--border);
-      font-size: 12px;
     }
     .chart-top-actions {
       display: flex;
@@ -479,13 +432,9 @@
         flex-direction: column;
         align-items: flex-start;
       }
-      .entry-hero,
-      .entry-grid {
-        grid-template-columns: 1fr;
-      }
-      .entry-title h1 {
-        font-size: 28px;
-      }
+      .entry-minimal { padding: 18px; }
+      .entry-buttons { grid-template-columns: 1fr; }
+      .entry-heading h1 { font-size: 28px; }
       .chart-canvas {
         min-width: 980px;
         width: 980px;
@@ -497,94 +446,36 @@
 <body>
   <div class="container">
     <section class="page entry-shell" id="entryPage">
-      <section class="card topbar">
-        <div class="entry-title">
-          <span class="kicker">数据接入入口</span>
-          <h1>先导入报表，再生成经营心电图</h1>
-          <p class="entry-subtitle">支持直接导入美团后台导出的全量订单报表；如果你只是想快速体验，也可以先用测试数据看图，再决定是否上传真实数据。</p>
-          <div class="hero-tags">
-            <span class="hero-tag">手机可上传</span>
-            <span class="hero-tag">电脑可上传</span>
-            <span class="hero-tag">本地解析，不依赖后端</span>
-          </div>
+      <section class="card entry-minimal">
+        <div class="entry-heading">
+          <span class="kicker">数据入口</span>
+          <h1>先选一种方式开始</h1>
+          <p id="entryVersionText">版本加载中</p>
         </div>
-        <div class="entry-side-card card">
-          <span class="entry-badge">当前版本</span>
-          <strong id="entryVersionText">版本加载中</strong>
-          <div class="entry-side-list">
-            <div class="entry-side-item"><span>导入方式</span><strong>CSV 报表</strong></div>
-            <div class="entry-side-item"><span>图表粒度</span><strong>15 分钟</strong></div>
-            <div class="entry-side-item"><span>适配设备</span><strong>手机 / 电脑</strong></div>
-          </div>
+
+        <div class="entry-buttons">
+          <section class="entry-button">
+            <div class="entry-button-title">上传订单数据</div>
+            <div class="entry-button-sub">导入美团后台导出的全量订单 CSV。</div>
+            <div class="entry-actions">
+              <input id="entryCsvFile" class="entry-file" type="file" accept=".csv,text/csv" />
+              <button id="entryUploadBtn" class="primary entry-cta">上传订单数据</button>
+            </div>
+            <div class="entry-note">
+              <strong>订单数据怎么提取</strong>
+              <span>美团后台一般从“订单”进入订单查询或订单列表，先选完整时间范围，再导出全量订单 CSV。手机和电脑都可以下载后再上传到这里。</span>
+            </div>
+            <div id="entryStatus" class="status"></div>
+          </section>
+
+          <section class="entry-button">
+            <div class="entry-button-title">用测试数据预览</div>
+            <div class="entry-button-sub">不上传真实数据，直接进入图表页。</div>
+            <div class="entry-actions">
+              <button id="previewBtn" class="primary entry-cta">用测试数据预览</button>
+            </div>
+          </section>
         </div>
-      </section>
-
-      <section class="entry-grid">
-        <section class="card entry-card">
-          <span class="entry-badge">方案 A</span>
-          <h3>导入美团后台全量订单数据</h3>
-          <p>先在美团商家后台导出全量订单 CSV，再回到这里上传。为了减少误操作，下面放了一张指示图，手机和电脑都可以照着路径找。</p>
-          <div class="guide-board" aria-label="美团后台导出报表指示图">
-            <svg viewBox="0 0 620 300" role="img" aria-labelledby="guideTitle">
-              <title id="guideTitle">美团后台导出报表指示图</title>
-              <rect x="1" y="1" width="618" height="298" rx="20" fill="#fff" stroke="#e6e8eb"/>
-              <rect x="24" y="28" width="110" height="244" rx="14" fill="#fff8d9" stroke="#ffe08a"/>
-              <text x="48" y="60" font-size="20" font-weight="700" fill="#6f5700">工作台</text>
-              <text x="48" y="110" font-size="18" fill="#7a7f85">订单</text>
-              <rect x="38" y="126" width="82" height="34" rx="10" fill="#ffd100"/>
-              <text x="52" y="149" font-size="16" font-weight="700" fill="#443400">订单查询</text>
-              <text x="48" y="198" font-size="18" fill="#7a7f85">数据</text>
-              <text x="48" y="228" font-size="18" fill="#7a7f85">门店</text>
-
-              <rect x="160" y="28" width="436" height="244" rx="14" fill="#fafbfc" stroke="#e6e8eb"/>
-              <rect x="184" y="48" width="200" height="26" rx="10" fill="#fff" stroke="#e6e8eb"/>
-              <text x="198" y="66" font-size="14" fill="#7a7f85">订单查询 / 订单列表</text>
-
-              <rect x="184" y="96" width="390" height="122" rx="16" fill="#fff" stroke="#e6e8eb"/>
-              <rect x="206" y="118" width="114" height="28" rx="8" fill="#fff8d9" stroke="#ffd86b"/>
-              <text x="220" y="137" font-size="14" font-weight="700" fill="#6f5700">筛选时间范围</text>
-              <rect x="338" y="118" width="108" height="28" rx="8" fill="#eef4ff" stroke="#cfe0ff"/>
-              <text x="355" y="137" font-size="14" fill="#2f7bff">全量订单</text>
-              <rect x="462" y="112" width="92" height="40" rx="10" fill="#ffd100"/>
-              <text x="486" y="137" font-size="16" font-weight="700" fill="#443400">导出报表</text>
-
-              <path d="M120 143 C150 143, 160 132, 186 132" fill="none" stroke="#ffb000" stroke-width="4" stroke-linecap="round"/>
-              <path d="M552 88 C552 72, 552 64, 552 58" fill="none" stroke="#ff8a00" stroke-width="4" stroke-linecap="round"/>
-              <polygon points="546,66 552,52 558,66" fill="#ff8a00"/>
-
-              <text x="184" y="244" font-size="15" fill="#6b7075">建议先选择完整日期范围，再导出 CSV 后上传到本页。</text>
-            </svg>
-          </div>
-          <div class="guide-steps">
-            <div class="guide-step"><span>1</span><div><strong>去美团后台导出 CSV</strong><p>按上图路径进入订单查询，选择完整时间范围，再导出全量订单。</p></div></div>
-            <div class="guide-step"><span>2</span><div><strong>回到这里上传</strong><p>手机点击下方“选择报表文件”，电脑直接选本地 CSV 文件。</p></div></div>
-            <div class="guide-step"><span>3</span><div><strong>自动进入图表页</strong><p>上传成功后会自动切换到图表页面，并展示你导入的真实数据。</p></div></div>
-          </div>
-          <div class="entry-actions">
-            <input id="entryCsvFile" type="file" accept=".csv,text/csv" />
-            <button id="entryUploadBtn" class="primary">导入报表并看图</button>
-          </div>
-          <div id="entryStatus" class="status"></div>
-          <div class="guide-tip">提示：如果手机上是从微信或浏览器打开，直接点“选择报表文件”即可调用系统文件选择器。</div>
-        </section>
-
-        <section class="card entry-card">
-          <span class="entry-badge">方案 B</span>
-          <h3>先用测试数据看图</h3>
-          <p>如果你现在手边还没有报表，可以先进入图表页看一版模拟数据，确认图表样式和阅读方式，再回来导入真实订单。</p>
-          <div class="info-box">
-            <strong>测试数据适合做什么</strong>
-            <p class="helper">快速了解图表的交互方式、横向滑动方式、峰值识别和客单价曲线展示。</p>
-          </div>
-          <div class="helper-list">
-            <p class="helper">点击后直接进入图表页。</p>
-            <p class="helper">不会上传任何数据。</p>
-            <p class="helper">后面仍可在图表页切回并重新导入真实报表。</p>
-          </div>
-          <div class="entry-actions">
-            <button id="previewBtn" class="primary">先用测试数据看图</button>
-          </div>
-        </section>
       </section>
     </section>
 
@@ -680,7 +571,7 @@
   </div>
 
   <script>
-    const APP_VERSION = 'v2026.04.13-3';
+    const APP_VERSION = 'v2026.04.13-4';
     const BUCKET_COUNT = 96;
     const DAY_WINDOW = 15;
     const DAY_MS = 24 * 60 * 60 * 1000;
