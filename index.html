@@ -22,151 +22,401 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
     :root {
-      --bg: #f8fafc;
-      --card: #fff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --primary: #0ea5e9;
-      --shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --panel-soft: #fafbfc;
+      --text: #222426;
+      --muted: #6b7075;
+      --border: #e6e8eb;
+      --primary: #ffd100;
+      --primary-deep: #f7c400;
+      --accent: #ffb000;
+      --blue: #2f7bff;
+      --orange: #ff8a00;
+      --success-text: #1f7a45;
+      --success-bg: #edf9f1;
+      --success-border: #b9e8c8;
+      --danger-text: #b54708;
+      --danger-bg: #fff4e8;
+      --danger-border: #ffd5ad;
+      --shadow: 0 10px 24px rgba(17, 24, 39, 0.06);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
       line-height: 1.5;
-      padding: 22px;
+      padding: 24px;
     }
-    .container { max-width: 1240px; margin: 0 auto; }
+    .container { max-width: 1280px; margin: 0 auto; }
     .card {
-      background: var(--card);
-      border-radius: 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
       box-shadow: var(--shadow);
-      padding: 18px;
+      padding: 18px 20px;
       margin-bottom: 16px;
     }
     .topbar {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       flex-wrap: wrap;
-      gap: 14px;
+      gap: 18px;
+      position: relative;
+      overflow: hidden;
+      padding: 22px 24px;
+      background:
+        linear-gradient(135deg, rgba(255, 209, 0, 0.22), rgba(255, 209, 0, 0.02) 52%),
+        linear-gradient(180deg, #ffffff, #fffdf6);
     }
-    h1 { margin: 0; font-size: 28px; }
-    h3 { margin: 0 0 8px; }
-    .desc { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 6px;
+      background: linear-gradient(180deg, var(--primary), var(--accent));
+    }
+    h1 { margin: 0; font-size: 32px; letter-spacing: -0.02em; }
+    h3 { margin: 0; font-size: 18px; }
+    .topbar-main,
+    .topbar-side {
+      position: relative;
+      z-index: 1;
+    }
+    .topbar-main {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: min(100%, 560px);
+    }
+    .topbar-side {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 209, 0, 0.65);
+      background: rgba(255, 209, 0, 0.2);
+      color: #7a5600;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .desc { margin: 0; color: var(--muted); font-size: 14px; }
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 10px;
+      background: rgba(34, 36, 38, 0.04);
+      color: #4b5258;
+      font-size: 13px;
+      font-weight: 500;
+    }
     .actions {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
+    }
+    .toolbar-caption {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
     }
     button, input, textarea {
       border: 1px solid var(--border);
       border-radius: 10px;
       font-size: 14px;
-      padding: 8px 12px;
+      padding: 10px 12px;
       background: #fff;
     }
-    button { cursor: pointer; color: var(--text); }
+    button {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+      transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+    }
+    button:hover { transform: translateY(-1px); }
     button:disabled { cursor: not-allowed; opacity: 0.6; }
-    .primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    input:focus {
+      outline: none;
+      border-color: #f1b900;
+      box-shadow: 0 0 0 3px rgba(255, 209, 0, 0.18);
+    }
+    .primary {
+      background: linear-gradient(180deg, #ffd84d, var(--primary));
+      color: #2a2200;
+      border-color: #f2c200;
+    }
     .layout {
       display: grid;
-      grid-template-columns: 1fr 360px;
-      gap: 14px;
+      grid-template-columns: minmax(0, 1fr) 370px;
+      gap: 16px;
     }
     @media (max-width: 1024px) { .layout { grid-template-columns: 1fr; } }
     #chart { width: 100%; height: 500px; }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .panel-kicker {
+      color: #8b6b00;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .panel-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .panel-chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #fff7d1;
+      color: #7c5e00;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid #ffe58a;
+    }
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
+      gap: 12px;
     }
     .summary-item {
       border: 1px solid var(--border);
-      background: #f8fafc;
-      border-radius: 12px;
-      padding: 12px;
+      background: linear-gradient(180deg, #ffffff, #fffdf8);
+      border-radius: 14px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    .summary-item::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary), #ffe580);
     }
     .summary-item p { margin: 0; color: var(--muted); font-size: 13px; }
-    .summary-item h3 { margin: 6px 0 0; font-size: 22px; }
-    .helper { color: var(--muted); margin-top: 8px; font-size: 12px; }
+    .summary-item h3 { margin: 8px 0 0; font-size: 24px; }
+    .helper { color: var(--muted); margin: 0; font-size: 12px; }
+    .helper-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--border);
+    }
     .status {
       margin-top: 8px;
       font-size: 12px;
-      color: #0f766e;
-      background: #ecfeff;
-      border: 1px solid #a5f3fc;
-      border-radius: 8px;
-      padding: 8px;
+      color: var(--success-text);
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      border-radius: 10px;
+      padding: 10px 12px;
       display: none;
       white-space: pre-wrap;
     }
     .status.error {
-      color: #9a3412;
-      background: #fff7ed;
-      border-color: #fed7aa;
+      color: var(--danger-text);
+      background: var(--danger-bg);
+      border-color: var(--danger-border);
     }
     .mode-chip {
       display: inline-block;
       font-size: 12px;
-      color: #075985;
-      background: #e0f2fe;
-      padding: 2px 8px;
+      color: #7a5a00;
+      background: #fff1ad;
+      padding: 4px 10px;
       border-radius: 999px;
-      margin-left: 6px;
+      margin-left: 8px;
+      vertical-align: middle;
+      border: 1px solid #ffe179;
     }
-    .field { margin-bottom: 10px; }
-    .field label { display: block; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+    .field { margin-bottom: 12px; }
+    .field label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #4f555a;
+      font-weight: 600;
+    }
+    .upload-panel {
+      background:
+        linear-gradient(180deg, rgba(255, 209, 0, 0.08), rgba(255, 255, 255, 0) 150px),
+        var(--panel);
+    }
+    .side-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .info-box {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #ffe8a3;
+      background: #fffaf0;
+    }
+    .info-box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fffdf7;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .footer-version {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #fff1ad;
+      color: #7a5a00;
+      border: 1px solid #ffe179;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    @media (max-width: 720px) {
+      body { padding: 14px; }
+      .topbar { padding: 18px; }
+      .topbar-side { align-items: flex-start; }
+      .actions { justify-content: flex-start; }
+      h1 { font-size: 28px; }
+      .card { padding: 16px; }
+      .footer-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <section class="card topbar">
-      <div>
+      <div class="topbar-main">
+        <span class="kicker">美团外卖经营分析视图</span>
         <h1>经营心电图 <span class="mode-chip" id="modeChip">当前：模拟数据</span></h1>
         <p class="desc">15分钟粒度订单量 + 平均客单价（实付）双轴曲线（近15天）</p>
+        <div class="hero-tags">
+          <span class="hero-tag">经营节奏识别</span>
+          <span class="hero-tag">午晚高峰对比</span>
+          <span class="hero-tag">CSV 本地解析</span>
+        </div>
       </div>
-      <div class="actions">
-        <button id="prevBtn">上一天</button>
-        <input id="datePicker" type="date" />
-        <button id="nextBtn">下一天</button>
-        <button id="downloadBtn" class="primary">下载图片</button>
+      <div class="topbar-side">
+        <div class="toolbar-caption">看板日期切换</div>
+        <div class="actions">
+          <button id="prevBtn">上一天</button>
+          <input id="datePicker" type="date" />
+          <button id="nextBtn">下一天</button>
+          <button id="downloadBtn" class="primary">下载图片</button>
+        </div>
       </div>
     </section>
 
     <div class="layout">
       <div>
         <section class="card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-kicker">核心看板</span>
+              <h3>日内经营曲线</h3>
+              <p class="panel-note">蓝线看订单量，橙线看客单价，快速识别营业节奏和异常波动。</p>
+            </div>
+            <span class="panel-chip">15 分钟粒度</span>
+          </div>
           <div id="chart"></div>
         </section>
         <section class="card">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-kicker">经营概览</span>
+              <h3>关键指标</h3>
+            </div>
+            <span class="panel-chip">自动汇总</span>
+          </div>
           <div id="summary" class="summary-grid"></div>
         </section>
       </div>
 
-      <aside class="card">
-        <h3>上传模式（美团标准报表 CSV）</h3>
-        <div class="field">
-          <label for="csvFile">CSV 文件</label>
-          <input id="csvFile" type="file" accept=".csv,text/csv" />
+      <aside class="card upload-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span class="panel-kicker">数据接入</span>
+            <h3>上传美团标准报表 CSV</h3>
+            <p class="panel-note">导入真实订单后，页面会自动切换为上传数据模式。</p>
+          </div>
+          <span class="panel-chip">本地处理</span>
         </div>
-        <div class="actions">
-          <button id="loadCsvBtn" class="primary">上传并解析 CSV</button>
-          <button id="resetBtn">恢复模拟模式</button>
+        <div class="side-stack">
+          <div class="field">
+            <label for="csvFile">CSV 文件</label>
+            <input id="csvFile" type="file" accept=".csv,text/csv" />
+          </div>
+          <div class="actions">
+            <button id="loadCsvBtn" class="primary">上传并解析 CSV</button>
+            <button id="resetBtn">恢复模拟模式</button>
+          </div>
+          <div id="status" class="status"></div>
+          <div class="info-box">
+            <strong>推荐导入字段</strong>
+            <p class="helper">日期、下单时间、订单状态、订单实付、订单编号。</p>
+          </div>
+          <div class="helper-list">
+            <p class="helper">仅统计“已完成”订单。</p>
+            <p class="helper">下单时间会自动下沉到 15 分钟桶。</p>
+            <p class="helper">无订单时段自动补齐，便于完整观察营业节奏。</p>
+          </div>
         </div>
-        <div id="status" class="status"></div>
-
-        <p class="helper">CSV 需包含以下列（支持同义字段）：日期、下单时间、订单状态、订单实付、订单编号。</p>
-        <p class="helper">只统计“已完成”订单；按下单时间 floor 到 15 分钟；无订单桶补齐为 0 / null / 0。</p>
       </aside>
     </div>
+
+    <footer class="footer-bar">
+      <span>经营心电图页面版本</span>
+      <span class="footer-version" id="versionBadge">版本加载中</span>
+    </footer>
   </div>
 
   <script>
+    const APP_VERSION = 'v2026.04.13-2';
     const BUCKET_COUNT = 96;
     const DAY_WINDOW = 15;
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -181,6 +431,7 @@
     const resetBtn = document.getElementById('resetBtn');
     const statusEl = document.getElementById('status');
     const modeChip = document.getElementById('modeChip');
+    const versionBadge = document.getElementById('versionBadge');
 
     const chart = echarts.init(document.getElementById('chart'));
 
@@ -627,6 +878,7 @@
 
     window.addEventListener('resize', () => chart.resize());
 
+    versionBadge.textContent = APP_VERSION;
     setModeLabel(false);
     render(datePicker.value);
   </script>
