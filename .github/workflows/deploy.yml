@@ -12,7 +12,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy index.html to ECS
+      - name: Validate required secrets
+        env:
+          SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_USERNAME: ${{ secrets.ECS_USERNAME }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+        run: |
+          test -n "$SSH_KEY"
+          test -n "$ECS_USERNAME"
+          test -n "$ECS_HOST"
+
+      - name: Deploy static assets to ECS
         env:
           SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
         run: |
@@ -28,9 +38,9 @@ jobs:
             ${{ secrets.ECS_USERNAME }}@${{ secrets.ECS_HOST }}:/var/www/html/waimaianalyze/
 
           rm -f /tmp/deploy_key
-          echo "✅ 部署完成：http://waimaiketang.com/waimaianalyze/"
+          echo "✅ 部署完成：https://waimaiketang.com/waimaianalyze/"
 
       - name: Summary
         run: |
           echo "### ✅ 部署完成" >> $GITHUB_STEP_SUMMARY
-          echo "访问地址：http://waimaiketang.com/waimaianalyze/" >> $GITHUB_STEP_SUMMARY
+          echo "访问地址：https://waimaiketang.com/waimaianalyze/" >> $GITHUB_STEP_SUMMARY
